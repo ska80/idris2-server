@@ -1,0 +1,4 @@
+
+*.ibc
+*.idr~
+.DS_Store
