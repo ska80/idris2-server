@@ -2,3 +2,4 @@
 *.ibc
 *.idr~
 .DS_Store
+examples/main

@@ -6,30 +6,31 @@ first-class types in order to defines your server's routes and its dependent typ
 enforce a proper implementation of those routes. Implementing a server is as easy as:
 
 ```idris
-MyRoute : Path Get Ok
-MyRoute = [Plain "User", Capture String, Return User]
+MyRoute : Path 4
+MyRoute = "numerator" // Cap "num" Int // "denominator" // Cap "denom" Int // Returns Int Get Ok
 
-MyImplementation : Signature MyRoute
-MyImplementation name = MkUser "Martin" "Odersky"
+MyImpl : Signature MyRoute
+MyImpl num den = num `div` den
 
 main : IO ()
-main = runServer MyRoute MyImplementation
+main = newServer MyRoute MyImpl
 ```
 
 ## Installation
 
 ```
-idris --install server.ipkg
+> idris --install server.ipkg
 ```
 
-Once the library is installed you can run the examples by going into the examples directory
+Once the library is installed you can compile the examples by going into the examples directory
 `cd examples/` and running
 
 ```
-idris -p server -p main Main.idr
+> idris -p server -o main Main.idr
+> ./main
 ```
 
-This will run a pretend server that read stdin and print the result on stdout
+This will run a pretend server that read stdin and print the result on stdout.
 
 ## Additional features (Not yet implemented)
 
