@@ -16,6 +16,21 @@ main : IO ()
 main = runServer MyRoute MyImplementation
 ```
 
+## Installation
+
+```
+idris --install server.ipkg
+```
+
+Once the library is installed you can run the examples by going into the examples directory
+`cd examples/` and running
+
+```
+idris -p server -p main Main.idr
+```
+
+This will run a pretend server that read stdin and print the result on stdout
+
 ## Additional features (Not yet implemented)
 
 - Automatically derive documatation from your routes
