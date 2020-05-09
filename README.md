@@ -6,11 +6,11 @@ first-class types in order to defines your server's routes and its dependent typ
 enforce a proper implementation of those routes. Implementing a server is as easy as:
 
 ```idris
-MyRoute : Path 4
+MyRoute : Path
 MyRoute = "numerator" // Cap "num" Int // "denominator" // Cap "denom" Int // Returns Int Get Ok
 
 MyImpl : Signature MyRoute
-MyImpl num den = num `div` den
+MyImpl = [div]
 
 main : IO ()
 main = newServer MyRoute MyImpl
@@ -37,7 +37,6 @@ This will run a pretend server that read stdin and print the result on stdout.
 - Automatically derive documatation from your routes
 - Automatically parses requests
 - First class support for [Typedefs](https://typedefs.com)
-
 
 ## Why
 

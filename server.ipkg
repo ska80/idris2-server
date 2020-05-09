@@ -3,3 +3,5 @@ package server
 sourcedir = src
 modules = Server
 
+pkgs = contrib
+
