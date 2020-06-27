@@ -3,3 +3,5 @@
 *.idr~
 .DS_Store
 examples/main
+
+build/
