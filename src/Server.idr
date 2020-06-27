@@ -26,7 +26,7 @@ data StatusCode : Nat -> Type where
   Forbidden : StatusCode 403
   NotFound : StatusCode 404
 
-export
+public export
 Parser : Type -> Type
 Parser t = String -> Maybe t
 
@@ -98,7 +98,7 @@ public export
 data Capt : Type where
   Cap : (name : String) -> (t : Type) -> HasParser t => Capt
 
-export
+public export
 interface PathBuilder t where
   (//) : t -> Path -> Path
 
