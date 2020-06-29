@@ -1,0 +1,8 @@
+package server
+
+sourcedir = src
+modules = Server
+        , Server.Typedefs
+
+pkgs = contrib, typedefs-core
+

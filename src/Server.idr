@@ -31,31 +31,37 @@ Parser : Type -> Type
 Parser t = String -> Maybe t
 
 public export
-interface HasParser t where
-  parse : Parser t
+data HasParser : t -> Type where
+  MkParse : Parser t -> HasParser t
 
 export
-HasParser Int where
-  parse = parseInteger
+%hint
+parseInt : HasParser Int
+parseInt = MkParse parseInteger
 
 export
-HasParser String where
-  parse = Just
+%hint
+parseStr : HasParser String
+parseStr = MkParse Just
+
+public export
+data DisplayFn : t -> Type where
+  Display : (t -> String) -> DisplayFn t
 
 ||| A Type for Paths that can have a common prefix.
 public export
 data Path : Type where
-  Returns : (t : Type) -> Show t => (v : Verb) -> (s : StatusCode n) -> Path
+  Returns : (t : Type) -> {auto display : DisplayFn t} -> (v : Verb) -> (s : StatusCode n) -> Path
   Plain : String -> (ps : Path) -> Path
-  Capture : (name : String) -> (t : Type) -> HasParser t => (ps : Path) -> Path
+  Capture : (name : String) -> (t : Type) -> {auto parser : HasParser t} -> (path : Path) -> Path
   Split : List Path -> Path
 
 ||| A Type for full path components.
 public export
 data PathComp : Nat -> Type where
-  End : (ret : Type) -> Show ret => PathComp Z
+  End : (ret : Type) -> {auto display : DisplayFn ret} -> PathComp Z
   Str : String -> PathComp n -> PathComp (S n)
-  Tpe : (t : Type) -> HasParser t => PathComp n -> PathComp (S n)
+  Tpe : (t : Type) -> {auto parser : HasParser t} -> PathComp n -> PathComp (S n)
 
 ||| Convert a PathComp into a function type
 public export
@@ -96,7 +102,7 @@ infixr 5 //
 
 public export
 data Capt : Type where
-  Cap : (name : String) -> (t : Type) -> HasParser t => Capt
+  Cap : (name : String) -> (t : Type) -> {auto parser : HasParser t} -> Capt
 
 public export
 interface PathBuilder t where
@@ -134,13 +140,13 @@ public export
 toComponents : (prefix : TypeList) -> (path : Path) -> List (n ** PathComp n)
 toComponents prefix (Returns t v s) = pure $ mkComponents (reverse prefix) t
   where
-    mkComponents : TypeList -> (t : Type) -> Show t => (n ** PathComp n)
+    mkComponents : TypeList -> (t : Type) -> {auto display : DisplayFn t} -> (n ** PathComp n)
     mkComponents []                       x = (Z ** End x)
     mkComponents ((Left l) :: xs)         x = let (n ** ys) = mkComponents xs x in (S n ** Str l ys)
     mkComponents ((Right (r ** s)) :: xs) x = let (n ** ys) = mkComponents xs x in (S n ** Tpe r ys)
 
 toComponents prefix (Plain name ps) = toComponents (Left name :: prefix) ps
-toComponents prefix (Capture name t ps) = toComponents (Right (t ** %implementation) :: prefix) ps
+toComponents prefix (Capture name t {parser} path) = toComponents (Right (t ** parser) :: prefix) path
 toComponents prefix (Split xs) =  xs >>= assert_total (toComponents prefix)
 
 ||| Maps a Path into a list of functions
@@ -165,8 +171,8 @@ makeParser : (path : PathComp n)
         -> Vect n String -> Maybe (Args path)
 makeParser (End t) [] = Just ()
 makeParser (Str s ps) (z :: xs) = if s == z then makeParser ps xs else Nothing
-makeParser (Tpe t ps) (z :: xs) =
-  [| MkPair (parse {t} z) (makeParser ps xs) |]
+makeParser (Tpe t {parser=MkParse parse} ps) (z :: xs) =
+  [| MkPair (parse z) (makeParser ps xs) |]
 
 Handler : PathComp n -> Type
 Handler path = Args path -> Ret path
@@ -189,7 +195,7 @@ server handlers = do
 
 ||| Returns a printing function for the return type of a given PathComp
 pathCompToPrintRet : (p : PathComp n) -> (Ret p) -> String
-pathCompToPrintRet (End ret) x = show x
+pathCompToPrintRet (End ret {display=Display display}) x = display x
 pathCompToPrintRet (Str _ ps) x = pathCompToPrintRet ps x
 pathCompToPrintRet (Tpe _ ps) x = pathCompToPrintRet ps x
 
