@@ -9,12 +9,23 @@ Operations = "Operation" // Cap "fst" Int // Split [
   ]
 
 Range : Path
-Range = "Range" // Returns (List Int) Get Ok
+Range = "Range" // Cap "lower" Nat // Cap "upper" Nat // Returns (List Nat) Get Ok
 
-implEx : Signature Range
-implEx = ?rest
--- implEx : Signature (Split [Range, Operations])
--- implEx = ?rest
+Imm : Path
+Imm = Returns (List Int) Get Ok
+
+rangeImpl : Signature Range
+rangeImpl = [rangeFromTo]
+
+immImpl : Signature Imm
+immImpl = [[1,2,3]]
+
+
+SplitType : Path
+SplitType = "split" // Split [Range, Operations]
+
+splitImpl : Signature (Split [Range, Operations])
+splitImpl = [rangeFromTo, (+) , div]
 
 main : IO ()
-main = newServer Range implEx
+main = newServer SplitType splitImpl

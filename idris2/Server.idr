@@ -1,8 +1,10 @@
 module Server
 
 import public Data.Vect
-import Data.List
+import public Data.List
+import Data.List1
 import Data.Strings
+import Control.Monad.Syntax
 
 %default total
 
@@ -35,8 +37,12 @@ interface HasParser t where
   parse : Parser t
 
 export
+HasParser Nat where
+  parse = map fromInteger . parseInteger
+
+export
 HasParser Int where
-  parse = ?parseInteger
+  parse = parseInteger
 
 export
 HasParser String where
@@ -98,7 +104,7 @@ public export
 data Capt : Type where
   Cap : (name : String) -> (t : Type) -> HasParser t => Capt
 
-export
+public export
 interface PathBuilder t where
   (//) : t -> Path -> Path
 
@@ -117,8 +123,8 @@ TypeList = List (Either String (s : Type ** HasParser s))
 public export
 mkComponents : TypeList -> (t : Type) -> Show t => (n ** PathComp n)
 mkComponents []                       x = (Z ** End x)
-mkComponents ((Left l) :: xs)         x = let (n ** ys) = mkComponents xs x in (S n ** Str l ys)
-mkComponents ((Right (r ** s)) :: xs) x = let (n ** ys) = mkComponents xs x in (S n ** Tpe r ys)
+mkComponents (Left _ :: xs) x = mkComponents xs x
+mkComponents (Right (r ** s) :: xs) x = let (n ** ys) = mkComponents xs x in (S n ** Tpe r ys)
 
 ||| Maps a Path to a list of PathComponents.
 ||| The prefix is repeated for each branching path
@@ -160,7 +166,7 @@ FromSignature ps {path} = signatureHelp ps
                  -> List (n ** p : PathComp n ** (Args p -> Ret p))
     signatureHelp [] {fnPath = []} = []
     signatureHelp (p :: ps) {fnPath = ((n ** path) :: ts)} =
-      (n ** path ** convertPathFuncs p) :: signatureHelp ps
+      (n ** (path ** convertPathFuncs p)) :: signatureHelp ps
 
 makeParser : (path : PathComp n)
         -> Vect n String -> Maybe (Args path)
@@ -179,7 +185,7 @@ partial
 server : (handlers : List (List String -> Maybe String)) -> IO ()
 server handlers = do
     str <- getLine
-    let Just result = tryAll handlers (split (== '/') str)
+    let Just result = tryAll handlers (List1.toList $ split (== '/') str)
       | _ => putStrLn ("could not parse " ++ str)
     putStrLn result
     server handlers

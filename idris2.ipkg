@@ -1,0 +1,5 @@
+package idris-server
+
+modules = Server
+depends = contrib
+sourcedir = "idris2"
