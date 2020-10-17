@@ -185,7 +185,7 @@ partial
 server : (handlers : List (List String -> Maybe String)) -> IO ()
 server handlers = do
     str <- getLine
-    let Just result = tryAll handlers (List1.toList $ split (== '/') str)
+    let Just result = tryAll handlers (List1.forget $ split (== '/') str)
       | _ => putStrLn ("could not parse " ++ str)
     putStrLn result
     server handlers
