@@ -1,85 +1,20 @@
 
 module URL
 
+import Data.String.ParserUtils
+import Data.String.NonEmpty
+
 import Control.Monad.Identity
 import Data.Strings
-import Data.String.Parser
 import Data.List1
 import Data.Either
 import Decidable.Equality
 
 -------------------------------------------------------------------------
--- Non empty string proofs
--------------------------------------------------------------------------
-
-export
-data NonEmptyString : Type where
-  Chars : (chars : List1 Char) -> NonEmptyString 
-
-export
-getString : NonEmptyString -> String
-getString (Chars chars) = pack (forget chars)
-
-public export
-data NonEmptyProof : String -> Type where
-  MkNonEmpty : (c : NonEmptyString) -> NonEmptyProof (getString c)
-
-checkNonEmpty' : (str : List Char) -> Maybe (NonEmptyProof (pack str))
-checkNonEmpty' [] = Nothing
-checkNonEmpty' (x :: xs) = Just (MkNonEmpty (Chars (x ::: xs)))
-
-unpackProof : pack (unpack str) = str
-unpackProof = believe_me (Refl {x = str})
-
-checkNonEmpty : (str : String) -> Maybe (NonEmptyProof str)
-checkNonEmpty str = rewrite sym $ unpackProof {str} in checkNonEmpty' (unpack str) 
-
--------------------------------------------------------------------------
--- Parser Utilities
--------------------------------------------------------------------------
-
-seq : Monad m => ParseT m a -> ParseT m b -> ParseT m (a, b)
-seq a b = do va <- a
-             vb <- b
-             pure (va, vb)
-
--- pairs up two parsers seperated by a separator
-pair : Monad m => ParseT m a -> (sep : ParseT m ()) -> ParseT m b -> ParseT m (a, b)
-pair a sep b = do va <- a
-                  skip sep
-                  vb <- b
-                  pure (va, vb)
-
-nonEmptyString : Monad m => ParseT m NonEmptyString
-nonEmptyString = do (c, cs) <- seq (satisfy (const True))
-                                   (many (satisfy (const True)))
-                    pure $ Chars (c ::: cs)
-
-sepBy : Monad m => Char -> ParseT m a -> ParseT m (List a)
-sepBy c elem = hchainl (pure <$> elem <|> pure [])
-                       (char c *> pure (\acc, v => acc ++ [v]))
-                       elem
-
-pairUp : (Monad m) => ParseT m (String, String)
-pairUp = do a <- takeWhile (/= '=')
-            skip (char '=')
-            b <- takeWhile (\x => x /= '&' && x /= '=')
-            pure (a, b)
-
-parseCompletely : ParseT Identity a -> String -> Either String a
-parseCompletely p input = do (output, len) <- parse p input
-                             if len /= strLength input
-                                then Left "did not consume until the end"
-                                else pure output
-
-parseQuery : String -> Maybe (List (String, String))
-parseQuery = eitherToMaybe . parseCompletely (sepBy '&' pairUp)
-
--------------------------------------------------------------------------
 -- RawURL Parsing
 -------------------------------------------------------------------------
-  
-export
+
+public export
 record RawURL where
   constructor MkRawURL
   scheme : String
@@ -88,24 +23,34 @@ record RawURL where
   queryItems :  String
   fragment : String
 
+export
+Show RawURL where
+  show (MkRawURL scheme host path queryItems fragment) =
+    "RawURL(scheme: " ++ scheme
+           ++ ", host: " ++ host
+           ++ ", path: " ++ path
+           ++ ", queryItems: " ++ queryItems
+           ++ ", fragment: " ++ fragment
+           ++ ")"
+
 parseRaw : Monad m => ParseT m (RawURL)
 parseRaw = [| MkRawURL parseScheme' parseHost' parsePath' parseQuery' parseFragment' |]
   where
     parseScheme' : ParseT m String
     parseScheme' = takeWhile (/= ':') <* char ':'
     parseHost' : ParseT m String
-    parseHost' = (seq (char '/') (char '/')) 
+    parseHost' = (seq (char '/') (char '/'))
               *> takeWhile (\x => x /= '/' && x /= '?' && x /= '#')
     parsePath' : ParseT m String
     parsePath' = takeWhile (\x => x /= '?' && x /= '#')
     parseQuery' : ParseT m String
-    parseQuery' = takeWhile (/= '#')
+    parseQuery' = (char '?' *> takeWhile (/= '#')) <|> pure ""
     parseFragment' : ParseT m String
-    parseFragment' = pack <$> many (satisfy (const True)) <* eos
+    parseFragment' = (pack <$> many (satisfy (const True)) <* eos) <|> pure ""
 
-||| parse a URL into it's raw form 
-rawURL : String -> Maybe RawURL
-rawURL x = eitherToMaybe (parseCompletely parseRaw x)
+||| parse a URL into it's raw form
+rawURL : String -> Either String RawURL
+rawURL = parseCompletely parseRaw
 
 -------------------------------------------------------------------------
 -- Parsing Paths
@@ -137,6 +82,7 @@ parsePath' [] = EmptyPath
 parsePath' ('/' :: xs) = Absolute (split (== '/') (pack xs))
 parsePath' (x :: xs) = Relative (split (== '/') (pack (x :: xs)))
 
+export
 parsePath : String -> Path
 parsePath = parsePath' . unpack
 
@@ -144,6 +90,12 @@ parsePath = parsePath' . unpack
 -- Verified URI type
 -------------------------------------------------------------------------
 
+||| Authority represents the middle section of a URL
+||| It might represent a network path, or a DNS name or a file path, or
+||| nothing. 
+||| UserInfo is optional and represents potential user logins for authentication
+||| Host is not optional and represents the resource to reach
+||| Port is optional and 
 public export
 record Authority where
   constructor MkAuthority
@@ -151,10 +103,12 @@ record Authority where
   host : NonEmptyString
   port : Maybe NonEmptyString
 
--- a path from a raw string is just a path that has been split 
-public export
-data ParsedPath : (List1 String) -> Type where
-  MkParsedPath : (path : String) -> ParsedPath (split (== '/') path)
+Show Authority where
+  show (MkAuthority userInfo host port) = 
+    "Authority(userInfo: " ++ show userInfo 
+         ++ ", host: " ++ show host
+         ++ ", port: " ++ show port
+         ++ ")"
 
 public export
 data ValidPath : (Maybe Authority) -> Path -> Type where
@@ -165,8 +119,16 @@ data ValidPath : (Maybe Authority) -> Path -> Type where
   HasAuthoritySlash : ValidPath (Just auth) (Absolute path)
   HasAuthorityEmpty : ValidPath (Just auth) EmptyPath
 
+(path : Path) => Show (ValidPath auth path) where
+  show NoAuthority {path=Absolute (a ::: (b ::c))} = 
+    "NoAuthority: " ++ show (a ::: (b :: c))
+  show HasAuthoritySlash {path=Absolute p} = 
+    "HasAuthoritySlash" ++ show p
+  show HasAuthorityEmpty {path=Relative ("" ::: [])} =
+    "No path because of authority"
+
 public export
-data Scheme : (sch : String) -> Type where
+data Scheme : (0 sch : String) -> Type where
   Empty : Scheme ""
   HTTPS : Scheme "https"
   HTTP : Scheme "http"
@@ -176,6 +138,17 @@ data Scheme : (sch : String) -> Type where
   IRC : Scheme "irc"
   Data : Scheme "data"
   Other : (s : String) -> Scheme s
+
+Show (Scheme s) where
+  show Empty = ""
+  show HTTPS = "https"
+  show HTTP = "http"
+  show FTP = "ftp"
+  show Mailto = "mailto"
+  show File = "file"
+  show IRC = "irc"
+  show Data = "data"
+  show (Other s) = s
 
 MkScheme : (sch : String) -> Scheme sch
 MkScheme "" = Empty
@@ -188,19 +161,32 @@ MkScheme "irc" = IRC
 MkScheme "data" = Data
 MkScheme other = Other other
 
-export
-record URL (url : RawURL) where
+public export
+record URL (0 url : RawURL) where
   constructor MkURL
   scheme : Scheme (url.scheme)
   authority : Maybe Authority
   path : ValidPath authority (parsePath url.path)
   query : List (String, String)
-  fragment : Dec (url.fragment = "")
+  fragment : Maybe NonEmptyString
+
+
+(url : RawURL) => Show (URL url) where
+  show (MkURL scheme authority path query fragment) =
+    "URL(scheme: " ++ show scheme
+      ++ ", auth: " ++ show authority
+      ++ ", path: " ++ show path
+      ++ ", queryItems: " ++ show query
+      ++ ", fragment: " ++ show fragment
+      ++ ")"
 
 -------------------------------------------------------------------------
 -- URI Parsing Functions
 -------------------------------------------------------------------------
 
+
+parseQuery : String -> Maybe (List (String, String))
+parseQuery = eitherToMaybe . parseCompletely (sepBy '&' pairUp)
 
 authParser : Monad m => ParseT m Authority
 authParser = [| MkAuthority (optional (nonEmptyString <* (char '@')))
@@ -210,39 +196,13 @@ authParser = [| MkAuthority (optional (nonEmptyString <* (char '@')))
 parseAuth : String -> Maybe Authority
 parseAuth = eitherToMaybe . parseCompletely authParser
 
--- check this = Just (MkAuthority (Just "user") "host" (Just "port")
-parseAuthTest1 : Maybe Authority
-parseAuthTest1 = parseAuth "user@host:port"
-
--- check this = Just (MkAuthority Nothing "host" (Just "port")
-parseAuthTest2 : Maybe Authority
-parseAuthTest2 = parseAuth "host:port"
-
--- check this = Just (MkAuthority Nothing "host" Nothing
-parseAuthTest3 : Maybe Authority
-parseAuthTest3 = parseAuth "host"
-
--- check this = Just (MkAuthority Nothing "host" Nothing
-parseAuthTest4 : Maybe Authority
-parseAuthTest4 = parseAuth "@host@"
-
--- check this = Nothing
-parseAuthTest5 : Maybe Authority
-parseAuthTest5 = parseAuth "user@:port"
-
---  NoAuthority : {a, b : String} ->
---                {0 nonEmpty : NonEmptyProof a} ->
---                {0 nonEmpty : NonEmptyProof b} ->
---                ValidPath Nothing (Absolute (a ::: (b :: c)))
---  HasAuthoritySlash : ValidPath (Just auth) (Absolute path)
---  HasAuthorityEmpty : ValidPath (Just auth) EmptyPath
-parseAuthPath : (path : Path) 
-             -> (auth : Maybe Authority) 
+parseAuthPath : (path : Path)
+             -> (auth : Maybe Authority)
              -> Maybe (ValidPath auth path)
-parseAuthPath (Absolute (head ::: (x :: xs))) Nothing = 
+parseAuthPath (Absolute (head ::: (x :: xs))) Nothing =
   do v1 <- checkNonEmpty head
      v2 <- checkNonEmpty x
-     pure $ NoAuthority {nonEmptyF = v1} {nonEmptyS = v2} 
+     pure $ NoAuthority {nonEmptyF = v1} {nonEmptyS = v2}
 parseAuthPath (Absolute (head ::: [])) Nothing = Nothing
 parseAuthPath (Relative x) Nothing = Nothing
 parseAuthPath (Absolute y) (Just x) = Just HasAuthoritySlash
@@ -258,11 +218,12 @@ checkURL (MkRawURL scheme host path queryItems fragment) = do
                auth
                validPath
                !(parseQuery queryItems)
-               (decEq fragment "")
-
+               (checkNonEmptyString fragment)
 
 export
 parseURL : String -> Maybe (url ** URL url)
-parseURL x = do url <- rawURL x
+parseURL x = do url <- eitherToMaybe (rawURL x)
                 checked <- checkURL url
                 pure (url ** checked)
+
+

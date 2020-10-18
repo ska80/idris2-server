@@ -1,31 +1,28 @@
 module Main
 
 import Server
+import Engine
 
-Operations : Path
-Operations = "Operation" // Cap "fst" Int // Split [
-  "add" // Cap "b"           Int // Returns Int Get Ok,
-  "div" // Cap "denominator" Int // Returns Int Get Ok
-  ]
+QueryOperate : Path
+QueryOperate = "add" // Query ["left" :=: Int, "right" :=: Int] Int Get Ok
 
 Range : Path
-Range = "Range" // Cap "lower" Nat // Cap "upper" Nat // Returns (List Nat) Get Ok
+Range = "range" // Cap "low" Int // Cap "high" Int // Returns (List Int) Get Ok
 
-Imm : Path
-Imm = Returns (List Int) Get Ok
+implementRange : Int -> Int -> List Int
+implementRange low high = [low .. high]
 
-rangeImpl : Signature Range
-rangeImpl = [rangeFromTo]
+implementAdd : IRecord ["left" :=: Int, "right" :=: Int] -> Int
+implementAdd ["left" :=: l, "right" :=: r] = l + r
+implementAdd [] impossible
 
-immImpl : Signature Imm
-immImpl = [[1,2,3]]
+ServerAPI : Path
+ServerAPI = Split [QueryOperate, Range]
 
-
-SplitType : Path
-SplitType = "split" // Split [Range, Operations]
-
-splitImpl : Signature (Split [Range, Operations])
-splitImpl = [rangeFromTo, (+) , div]
+ServerImplementation : Signature ServerAPI
+ServerImplementation = [implementAdd, implementRange]
 
 main : IO ()
-main = newServer SplitType splitImpl
+main = newServer ServerAPI ServerImplementation
+
+

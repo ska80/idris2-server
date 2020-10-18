@@ -1,12 +1,22 @@
 module Server
 
-import public Data.Vect
+import Control.Monad.Syntax
+import public Data.String.ParserInterface
+import Data.Either
+import Data.Vect
 import public Data.List
 import Data.List1
 import Data.Strings
-import Control.Monad.Syntax
+import Decidable.Equality
+
+import public Records
 
 %default total
+
+export
+orElse : Either a b -> Either a b -> Either a b
+orElse (Left x) y = y
+orElse (Right x) y = Right x
 
 public export
 data Verb = Get | Patch | Post | Put
@@ -28,30 +38,27 @@ data StatusCode : Nat -> Type where
   Forbidden : StatusCode 403
   NotFound : StatusCode 404
 
-export
-Parser : Type -> Type
-Parser t = String -> Maybe t
+namespace IndexedRecords
+  ||| Value for a row given a key
+  public export
+  data RowVal : String -> Type -> Type where
+    (:=:) : (s : String) -> (val : t) -> HasParser t => RowVal s t
 
-public export
-interface HasParser t where
-  parse : Parser t
-
-export
-HasParser Nat where
-  parse = map fromInteger . parseInteger
-
-export
-HasParser Int where
-  parse = parseInteger
-
-export
-HasParser String where
-  parse = Just
+  public export
+  data IRecord : Record -> Type where
+    Nil : IRecord []
+    (::) :  HasParser t => RowVal s t -> 
+            IRecord rs -> IRecord (s :=: t :: rs)
 
 ||| A Type for Paths that can have a common prefix.
 public export
 data Path : Type where
-  Returns : (t : Type) -> Show t => (v : Verb) -> (s : StatusCode n) -> Path
+  Ends : (queryItems: Maybe Record) 
+      -> (returnType : Type) 
+      -> Show returnType 
+      => (v : Verb) 
+      -> (s : StatusCode n) 
+      -> Path
   Plain : String -> (ps : Path) -> Path
   Capture : (name : String) -> (t : Type) -> HasParser t => (ps : Path) -> Path
   Split : List Path -> Path
@@ -59,26 +66,35 @@ data Path : Type where
 ||| A Type for full path components.
 public export
 data PathComp : Nat -> Type where
-  End : (ret : Type) -> Show ret => PathComp Z
+  End : (q : Maybe Record) -> (ret : Type) -> Show ret => PathComp Z
   Str : String -> PathComp n -> PathComp (S n)
   Tpe : (t : Type) -> HasParser t => PathComp n -> PathComp (S n)
+
+Show (PathComp n) where
+  show (End q ret) = "return"
+  show (Str x y) = x ++ "/" ++ show y
+  show (Tpe t x) = "type/" ++ show x
 
 ||| Convert a PathComp into a function type
 public export
 PathCompToType : PathComp n -> Type
-PathCompToType (End ret) = ret
+PathCompToType (End Nothing ret) = ret
+PathCompToType (End (Just rec) ret) = IRecord rec -> ret
 PathCompToType (Str x y) = PathCompToType y
 PathCompToType (Tpe x y) = x -> PathCompToType y
 
 ||| Convert a PathComp into a tuple of arguments for the corresponding function type
+public export
 Args : PathComp n -> Type
-Args (End t) = ()
+Args (End Nothing t) = ()
+Args (End (Just rec) t) = IRecord rec
 Args (Str s ps) = Args ps
 Args (Tpe t ps) = (t, Args ps)
 
-||| Returns the return type of the corresponding function type from a PathComp
+||| Ends the return type of the corresponding function type from a PathComp
+public export
 Ret : PathComp n -> Type
-Ret (End t) = t
+Ret (End q t) = t
 Ret (Str _ ps) = Ret ps
 Ret (Tpe _ ps) = Ret ps
 
@@ -87,8 +103,10 @@ PathToArgs : PathComp n -> Type
 PathToArgs path = Args path -> Ret path
 
 ||| Converts a function type into its uncurried variant
+export
 convertPathFuncs : {path : PathComp n} -> PathCompToType path -> Args path -> Ret path
-convertPathFuncs x y {path = (End ret)} = x
+convertPathFuncs x y {path = (End Nothing ret)} = x
+convertPathFuncs f arg {path = (End (Just rec) ret)} = f arg
 convertPathFuncs x y {path = (Str s p)} = convertPathFuncs x y {path=p}
 convertPathFuncs f (v, args) {path = (Tpe t p)} = convertPathFuncs (f v) args {path=p}
 
@@ -116,15 +134,31 @@ public export
 PathBuilder Capt where
   (//) (Cap n t) p = Capture n t p
 
+
+public export
+Query :  Record -> (t : Type) -> Show t =>
+       (v : Verb) -> (s : StatusCode n) -> Path
+Query rec t v s = Ends (Just rec) t v s
+
+public export
+Returns : (t : Type) -> Show t =>
+        (v : Verb) -> (s : StatusCode n) -> Path
+Returns t v s = Ends Nothing t v s
+
+
 public export
 TypeList : Type
 TypeList = List (Either String (s : Type ** HasParser s))
 
 public export
-mkComponents : TypeList -> (t : Type) -> Show t => (n ** PathComp n)
-mkComponents []                       x = (Z ** End x)
-mkComponents (Left _ :: xs) x = mkComponents xs x
-mkComponents (Right (r ** s) :: xs) x = let (n ** ys) = mkComponents xs x in (S n ** Tpe r ys)
+mkComponents : Maybe Record -> TypeList -> (t : Type) -> Show t => (n ** PathComp n)
+mkComponents rec [] x = (Z ** End rec x)
+mkComponents rec (Left str :: xs) x =
+  let (n ** ts) = mkComponents rec xs x in
+      (S n ** Str str ts)
+mkComponents rec (Right (r ** s) :: xs) x =
+  let (n ** ys) = mkComponents rec xs x in
+      (S n ** Tpe r ys)
 
 ||| Maps a Path to a list of PathComponents.
 ||| The prefix is repeated for each branching path
@@ -144,7 +178,8 @@ mkComponents (Right (r ** s) :: xs) x = let (n ** ys) = mkComponents xs x in (S 
 ||| ]
 public export
 toComponents : (pre : TypeList) -> (path : Path) -> List (n ** PathComp n)
-toComponents pre (Returns t v s) = pure $ mkComponents (reverse pre) t
+toComponents pre (Ends rec t v s) =
+  pure $ mkComponents rec (reverse pre) t
 toComponents pre (Plain name ps) = toComponents (Left name :: pre) ps
 toComponents pre (Capture name t ps) = toComponents (Right (t ** %search) :: pre) ps
 toComponents pre (Split xs) =  xs >>= assert_total (toComponents pre)
@@ -168,79 +203,69 @@ FromSignature ps {path} = signatureHelp ps
     signatureHelp (p :: ps) {fnPath = ((n ** path) :: ts)} =
       (n ** (path ** convertPathFuncs p)) :: signatureHelp ps
 
+public export
+data ServerError : Type where
+  WrongArgumentLength : Show a => (n : Nat) -> List a -> PathComp n -> ServerError
+  UnexpectedPath : (expected, actual : String) -> ServerError
+  ParseError : (message : String) -> ServerError
+  UnhandledPath : List String -> ServerError
+  Aggregate : List ServerError -> ServerError
+  QueryLength : ServerError
+  UnexpectedQueryItem : (expected, actual : String) -> ServerError
+
+export
+Show ServerError where
+  show (WrongArgumentLength k xs p) =
+    "Expected " ++ show k ++ " arguments, got " ++ show (length xs) ++
+      " expected path: " ++ show p ++
+      " Actual path: " ++ show xs
+  show (UnexpectedPath expected actual) =
+    "Expected path component " ++ show expected ++ ", got " ++ show actual ++ " instead."
+  show (ParseError message) =
+    "Parse error: " ++ show message ++ "."
+  show (UnhandledPath xs) =
+    "Path not handled by server: " ++ show xs ++ "."
+  show (Aggregate xs) =
+    "Aggregated errors: " ++ unlines (map (assert_total show) xs)
+  show QueryLength =
+    "Query items have the wrong length"
+  show (UnexpectedQueryItem expected actual) =
+    "Expected key '" ++ expected ++ "' got '" ++ actual ++ "' instead."
+
+public export
+ServerM : Type -> Type
+ServerM = Either ServerError
+
+parseToServerError : Parser a -> String -> ServerM a
+parseToServerError p s = maybeToEither (ParseError $ "could not parse " ++ s) (p s)
+
+public export
+fieldParser : (rec : Record) -> List (String, String) -> ServerM (IRecord rec)
+fieldParser [] [] = pure []
+fieldParser ((f :=: t) :: rs) ((key, value) :: xs) with (decEq key f)
+  fieldParser ((f :=: t) :: rs) ((key, value) :: xs) | Yes with_pat = do
+       v <- parseToServerError (parse {t}) value
+       rest <- fieldParser rs xs
+       pure (f :=: v :: rest)
+  fieldParser ((f :=: t) :: rs) ((key, value) :: xs) | No with_pat =
+    Left $ UnexpectedQueryItem f key
+fieldParser _ _ = Left QueryLength
+
+||| Given a path, generate a function that parses the arguments from a URL
+||| @path : The path to parse
+||| @queryItems : The query items from the URL
+||| @components : The component paths from the URL
+export
 makeParser : (path : PathComp n)
-        -> Vect n String -> Maybe (Args path)
-makeParser (End t) [] = Just ()
-makeParser (Str s ps) (z :: xs) = if s == z then makeParser ps xs else Nothing
-makeParser (Tpe t ps) (z :: xs) =
-  [| MkPair (parse {t} z) (makeParser ps xs) |]
-
-Handler : PathComp n -> Type
-Handler path = Args path -> Ret path
-
--- Here the handlers are both parsing the string and returning the result of
--- the comutation as an encoded string. This is to void leaking the detail of
--- the dependency between the parsed type and the type of the handler.
-partial
-server : (handlers : List (List String -> Maybe String)) -> IO ()
-server handlers = do
-    str <- getLine
-    let Just result = tryAll handlers (List1.forget $ split (== '/') str)
-      | _ => putStrLn ("could not parse " ++ str)
-    putStrLn result
-    server handlers
-  where
-    tryAll : List (List String -> Maybe String) -> List String -> Maybe String
-    tryAll [] input = Nothing
-    tryAll (f :: fs) input = f input <|> tryAll fs input
-
-||| Returns a printing function for the return type of a given PathComp
-pathCompToPrintRet : (p : PathComp n) -> (Ret p) -> String
-pathCompToPrintRet (End ret) x = show x
-pathCompToPrintRet (Str _ ps) x = pathCompToPrintRet ps x
-pathCompToPrintRet (Tpe _ ps) x = pathCompToPrintRet ps x
-
-||| Make a function to handle server request from a path
-|||
-||| This combines 3 functions, one to parse the URL path and
-||| extract the arguments from it. One to perform an operation on the
-||| parsed arguments, and one to print the final result.
-||| The resulting functions hides all details about the intermediate
-||| types used to parse the incoming request and operates on Strings
-||| only.
-||| @ length : The length of the path
-||| @ path : The URL path
-||| @ showResult : The printer function for the computed result
-||| @ handler : The operation to perform on the parsed arguments
-stringSig : (length : Nat) -> (path : PathComp length)
-         -> (parsePath : Vect length String -> Maybe (Args p))
-         -> (showResult : Ret p -> String)
-         -> (handler : Args p -> Ret p)
-         -> (List String -> Maybe String)
-stringSig n p parser printer handler =
-    map (printer . handler) . (\x => checkLength n x >>= parser)
-  where
-    checkLength : (n : Nat) -> List a -> Maybe (Vect n a)
-    checkLength n ls = exactLength n $ fromList ls
-
-||| Given an implementation of a path, return a list of function for each possible route
-handleAllPaths : {path : List (m ** PathComp m)} -> PathList path -> List (List String -> Maybe String)
-handleAllPaths [] {path = []} = []
-handleAllPaths (v :: vs) {path = ((n ** comp) :: ts)} =
-    stringSig n comp (makeParser comp) (pathCompToPrintRet comp) (convertPathFuncs v)
-      :: handleAllPaths vs {path=ts}
-
-||| Given an implementation of a path, return a list of function for each possible route
-forAllPaths : {path : Path} -> Signature path -> List (List String -> Maybe String)
-forAllPaths x {path} = handleAllPaths x
-
-||| Instanciate a new sever given a path and an implementation for it.
-|||
-||| @ path : The server's API as a Path
-||| @ impl : The servver's implementation of the exposed API
-export partial
-newServer : (path : Path)
-         -> (impl : Signature path)
-         -> IO ()
-newServer path impl = server (forAllPaths impl)
-
+          -> (queryItems : List (String, String))
+          -> (components: Vect n String)
+          -> ServerM (Args path)
+makeParser (End Nothing t) query [] = pure ()
+makeParser (End (Just rec) t) query [] = fieldParser rec query
+makeParser (Str s ps) query (z :: xs) =
+  if s == z
+     then makeParser ps query xs
+     else Left $ UnexpectedPath s z
+makeParser (Tpe t ps) query (z :: xs) =
+  [| MkPair (parseToServerError (parse {t}) z)
+            (makeParser ps query xs) |]
