@@ -73,8 +73,18 @@ data Path : Type where
   -- Starts with no /
   Relative : List1 String -> Path
 
+Eq Path where
+  Absolute ls == Absolute ls' = ls == ls'
+  Relative ls == Relative ls' = ls == ls'
+  _ == _ = False
+
 EmptyPath : Path
 EmptyPath = Relative ("" ::: [])
+
+export
+isEmptyPath : Path -> Bool
+isEmptyPath (Absolute ("" ::: [])) = True
+isEmptyPath path = path == EmptyPath
 
 private
 parsePath' : List Char -> Path
@@ -92,10 +102,10 @@ parsePath = parsePath' . unpack
 
 ||| Authority represents the middle section of a URL
 ||| It might represent a network path, or a DNS name or a file path, or
-||| nothing. 
+||| nothing.
 ||| UserInfo is optional and represents potential user logins for authentication
 ||| Host is not optional and represents the resource to reach
-||| Port is optional and 
+||| Port is optional and
 public export
 record Authority where
   constructor MkAuthority
@@ -104,8 +114,8 @@ record Authority where
   port : Maybe NonEmptyString
 
 Show Authority where
-  show (MkAuthority userInfo host port) = 
-    "Authority(userInfo: " ++ show userInfo 
+  show (MkAuthority userInfo host port) =
+    "Authority(userInfo: " ++ show userInfo
          ++ ", host: " ++ show host
          ++ ", port: " ++ show port
          ++ ")"
@@ -120,9 +130,9 @@ data ValidPath : (Maybe Authority) -> Path -> Type where
   HasAuthorityEmpty : ValidPath (Just auth) EmptyPath
 
 (path : Path) => Show (ValidPath auth path) where
-  show NoAuthority {path=Absolute (a ::: (b ::c))} = 
+  show NoAuthority {path=Absolute (a ::: (b ::c))} =
     "NoAuthority: " ++ show (a ::: (b :: c))
-  show HasAuthoritySlash {path=Absolute p} = 
+  show HasAuthoritySlash {path=Absolute p} =
     "HasAuthoritySlash" ++ show p
   show HasAuthorityEmpty {path=Relative ("" ::: [])} =
     "No path because of authority"

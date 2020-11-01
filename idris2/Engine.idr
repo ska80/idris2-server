@@ -1,5 +1,6 @@
 module Engine
 
+import Control.Monad.Converter
 import Data.List1
 import Data.Strings
 import Data.Maybe
@@ -9,9 +10,9 @@ import Server
 import URL
 
 Handler : Type
-Handler = (components : List String) 
+Handler = (components : List String)
        -> (queryItems : List (String, String))
-       -> ServerM String
+       -> IO (ServerM String)
 
 -- Here the handlers are both parsing the string and returning the result of
 -- the comutation as an encoded string. This is to void leaking the detail of
@@ -27,27 +28,27 @@ server handlers = do
                              fragment))) = parseURL str
       | _ => putStrLn ("Could not parse url " ++ str)
           *> server handlers
-    let (Absolute p) = parsePath (path url)
+    let (Absolute (p ::: ps)) = parsePath (path url)
         | (Relative x) => putStrLn ("Expected absolute path, but got relative path"
                        ++ show x)
                        *> server handlers
-
-    let result = tryAll [] handlers (forget p) query
+    let urlPath = if p == "" then [] else p :: ps
+    result <- tryAll [] handlers urlPath query
     either printLn putStrLn result
     server handlers
   where
-    bindFst : (a -> Either a b) -> Either a b -> Either a b
-    bindFst f (Left x) = f x
-    bindFst f (Right x) = Right x
-
+    -- Returns a handler that combines all handlers from a list by
+    -- successively trying to apply them in order
     tryAll : List ServerError -> List Handler -> Handler
-    tryAll errors [] input query = Left $ Aggregate errors
+    tryAll errors [] input query = pure $ Left $ Aggregate errors
     tryAll errors (f :: fs) input query =
-      bindFst (\err => tryAll (err :: errors) fs input query) (f input query)
+      do Right v <- f input query
+           | Left err => tryAll (err :: errors) fs input query
+         pure (Right v)
 
 ||| Returns a printing function for the return type of a given PathComp
-pathCompToPrintRet : (p : PathComp n) -> (Ret p) -> String
-pathCompToPrintRet (End _ ret) x = show x
+pathCompToPrintRet : Applicative m => (p : PathComp m n) -> (Ret p) -> m String
+pathCompToPrintRet (End _ ret) x = map show x
 pathCompToPrintRet (Str _ ps) x = pathCompToPrintRet ps x
 pathCompToPrintRet (Tpe _ ps) x = pathCompToPrintRet ps x
 
@@ -64,30 +65,38 @@ pathCompToPrintRet (Tpe _ ps) x = pathCompToPrintRet ps x
 ||| @ parsePath : The parsing function that returns parsed arguments
 ||| @ showResult : The printer function for the computed result
 ||| @ handler : The operation to perform on the parsed arguments
-stringSig : (length : Nat)
-         -> (path : PathComp length)
+stringSig : Applicative m
+         => (m =*> IO)
+         => (length : Nat)
+         -> (path : PathComp m length)
          -> (parsePath : (queryItems : List (String, String))
                       -> (components : Vect length String)
                       -> ServerM (Args p))
-         -> (showResult : Ret p -> String)
+         -> (showResult : Ret p -> m String)
          -> (handler : Args p -> Ret p)
          -> Handler
 stringSig n p parser printer handler path query =
-  map (printer . handler) (checkLength path >>= parser query)
+  let handle = (printer . handler)
+      parsed = (checkLength path >>= parser query) in
+      lift (traverse handle parsed)
   where
     checkLength : Show a => List a -> ServerM (Vect n a)
     checkLength ls = maybeToEither (WrongArgumentLength n ls p )
                                    (exactLength n $ fromList ls)
 
 ||| Given an implementation of a path, return a list of function for each possible route
-handleAllPaths : (path : List (m ** PathComp m)) -> PathList path -> List Handler
+handleAllPaths : Applicative m => (m =*> IO)
+              => (path : List (n ** PathComp m n)) -> PathList path -> List Handler
 handleAllPaths [] [] = []
 handleAllPaths ((n ** comp) :: ts) (v :: vs)  =
-    stringSig n comp (makeParser comp) (pathCompToPrintRet comp) (convertPathFuncs v)
-      :: handleAllPaths ts vs
+       let paths =  handleAllPaths ts vs
+           path = stringSig n comp (makeParser comp)
+                                   (pathCompToPrintRet comp)
+                                   (convertPathFuncs v) in
+           path :: paths
 
 ||| Given an implementation of a path, return a list of function for each possible route
-forAllPaths : (path : Server.Path) -> Signature path
+forAllPaths : Applicative m => m =*> IO => (path : Server.Path) -> Signature m path
            -> List Handler
 forAllPaths path x = handleAllPaths (toComponents [] path)  x
 
@@ -96,8 +105,9 @@ forAllPaths path x = handleAllPaths (toComponents [] path)  x
 ||| @ path : The server's API as a Path.
 ||| @ impl : The server's implementation of the exposed API.
 export partial
-newServer : (path : Server.Path)
-         -> (impl : Signature path)
+newServer : Applicative m => m =*> IO
+         => (path : Server.Path)
+         -> (impl : Signature m path)
          -> IO ()
 newServer path impl = server (forAllPaths path impl)
 
