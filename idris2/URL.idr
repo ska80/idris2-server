@@ -200,7 +200,7 @@ parseQuery = eitherToMaybe . parseCompletely (sepBy '&' pairUp)
 
 authParser : Monad m => ParseT m Authority
 authParser = [| MkAuthority (optional (nonEmptyString <* (char '@')))
-                            (nonEmptyString <* ((char ':') <|> eos))
+                            (nonEmptyString <* ((ignore $ char ':') <|> eos))
                             (optional nonEmptyString) |]
 
 parseAuth : String -> Maybe Authority

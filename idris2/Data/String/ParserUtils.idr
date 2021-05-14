@@ -39,8 +39,8 @@ sepBy c elem = hchainl (pure <$> elem <|> pure [])
 
 export
 pairUp : (Monad m) => ParseT m (String, String)
-pairUp = pair (takeWhile (/= '=')) 
-              (skip (char '=')) 
+pairUp = pair (takeWhile (/= '='))
+              (skip (char '='))
               (takeWhile (\x => x /= '&' && x /= '='))
 
 export

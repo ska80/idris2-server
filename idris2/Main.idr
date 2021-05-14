@@ -101,6 +101,7 @@ createItem = do
 todoImpl : Signature (State ServerState) Main.todoAPI
 todoImpl = [retList , createItem, completeItem, deleteItem]
 
+
 -- In order to run the server we need to supply it with an initial state
 -- which will be stored as an IORef
 main : IO ()

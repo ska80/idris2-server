@@ -1,6 +1,6 @@
 module Server
 
-import Control.Monad.Syntax
+-- import Control.Monad.Syntax
 import Control.Monad.Identity
 import Control.Monad.Converter
 import public Data.String.ParserInterface
@@ -101,6 +101,7 @@ Ret (Str _ ps) = Ret ps
 Ret (Tpe _ ps) = Ret ps
 
 ||| Converts a PathComp into an uncurried function from a tuple of argument into its return type
+0
 PathToArgs : PathComp m n -> Type
 PathToArgs path = Args path -> Ret path
 
@@ -219,8 +220,8 @@ data ServerError : Type where
 export
 Show ServerError where
   show (WrongArgumentLength k xs p) =
-    "Expected " ++ show k ++ " arguments, got " ++ show (length xs) ++
-      " expected path: " ++ show p ++
+    "Expected " ++ show k ++ " arguments, got " ++ show (length xs) ++ "." ++
+      " Expected path: " ++ show p ++
       " Actual path: " ++ show xs
   show (UnexpectedPath expected actual) =
     "Expected path component " ++ show expected ++ ", got " ++ show actual ++ " instead."
@@ -229,7 +230,7 @@ Show ServerError where
   show (UnhandledPath xs) =
     "Path not handled by server: " ++ show xs ++ "."
   show (Aggregate xs) =
-    "Aggregated errors: " ++ unlines (map (assert_total show) xs)
+    "Multiple errors: \n" ++ unlines (map (\x => " - " ++ (assert_total show) x) xs)
   show QueryLength =
     "Query items have the wrong length"
   show (UnexpectedQueryItem expected actual) =
