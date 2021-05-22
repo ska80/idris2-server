@@ -1,4 +1,4 @@
-module Lens
+module Optics
 
 import Data.Vect
 import Products
@@ -37,17 +37,21 @@ record Traversal (a, b, s, t : Type) where
   constructor MkTrav
   extract : s -> (n ** (Vect n a, Vect n b -> t))
 
+public export
 interface Profunctor p where
   dimap : (a' -> a) -> (b -> b') -> p a b -> p a' b'
 
+public export
 interface Profunctor p => Cartesian p where
   first : p a b -> p (a :*: c) (b :*: c)
   second : p a b -> p (c :*: a) (c :*: b)
 
+public export
 interface Profunctor p => CoCartesian p where
   left : p a b -> p (a :+: c) (b :+: c)
   right : p a b -> p (c :+: a) (c :+: b)
 
+public export
 interface Profunctor p => Monoidal p where
   empty : p () ()
   (&&) : p a b -> p c d -> p (a :*: c) (b :*: d)
@@ -70,18 +74,23 @@ implementation Profunctor (Traversal a b) where
 
 parameters (p : Type -> Type -> Type)
 
+  public export
   Optic : (a, b, s, t : Type) -> Type
   Optic a b s t = p a b -> p s t
 
+  public export
   PrismP : (a, b, s, t : Type) -> Type
   PrismP a b s t = CoCartesian p => Optic a b s t
 
+  public export
   LensP : (a, b, s, t : Type) -> Type
   LensP a b s t = Cartesian p => Optic a b s t
 
+  public export
   AdapterP : (a, b, s, t : Type) -> Type
   AdapterP a b s t = Profunctor p => Optic a b s t
 
+  public export
   TraversalP : (a, b, s, t : Type) -> Type
   TraversalP a b s t = Cartesian p => CoCartesian p => Monoidal p =>
                        Optic a b s t

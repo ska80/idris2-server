@@ -7,9 +7,8 @@ import Control.Monad.State
 import Data.IORef
 import Data.Nat
 
-
 API : Path
-API = "path" // "to" // "resource" // Returns () Get Ok
+API = "path" // "to" // "resource" // Returns T1 Get Ok
 
 SimpleAPI : Signature (Identity) API
 SimpleAPI = [pure ()]
