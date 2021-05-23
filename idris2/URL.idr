@@ -136,6 +136,7 @@ data ValidPath : (Maybe Authority) -> Path -> Type where
     "HasAuthoritySlash" ++ show p
   show HasAuthorityEmpty {path=Relative ("" ::: [])} =
     "No path because of authority"
+  show _ = "should not happen, case trees are bugged"
 
 public export
 data Scheme : (0 sch : String) -> Type where
@@ -236,4 +237,5 @@ parseURL x = do url <- eitherToMaybe (rawURL x)
                 checked <- checkURL url
                 pure (url ** checked)
 
-
+{-
+-}

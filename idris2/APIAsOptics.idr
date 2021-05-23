@@ -4,6 +4,8 @@ import Server
 import Optics
 import Control.Monad.Identity
 
+import Data.SortedMap
+
 data Status = Done | NotDone
 
 Show Status where
@@ -19,8 +21,8 @@ record Todo where
 Show Todo where
   show (MkTodo id c s) = "Todo(id: \{show id}, content: \{c}, status: \{show s})"
 
-api : PathComp 2
-api = Str "todo" $ Tpe String $ End Nothing (List Todo)
+getTodo : PathComp 2
+getTodo = Str "todo" $ Tpe String $ End Nothing (List Todo)
 -- api = "todo" // Cap "user" String // Returns (List Todo) Get Ok
 
 pathToOptic : Profunctor p => Cartesian p => CoCartesian p => Monoidal p =>
