@@ -7,12 +7,14 @@ import public Typedefs.Typedefs
 import public Typedefs.DependentLookup
 import public Typedefs.TypedefsDecEq
 
+%default total
+
 public export
 TypeConstructor : Nat -> Type
 TypeConstructor Z = Type
 TypeConstructor (S n) = Type -> TypeConstructor n
 
-public export 0
+public export
 ApplyVect : TypeConstructor n -> Vect n Type -> Type
 ApplyVect c [] = c
 ApplyVect c (x :: xs) {n = S k} = ApplyVect (c x) xs
@@ -28,7 +30,7 @@ args []                 = T0
 args [(_,m)]            = m
 args ((_,m)::(_,l)::ms) = TSum (m :: l :: map snd ms)
 
-public export 0
+public export
 ReverseVect : {n : Nat} -> (mkType : Vect n Type -> Type) -> TypeConstructor n
 ReverseVect mkType {n = Z} = mkType []
 ReverseVect mkType {n = (S k)} = \arg => ReverseVect (popHead mkType arg)
@@ -38,11 +40,11 @@ ReverseVect mkType {n = (S k)} = \arg => ReverseVect (popHead mkType arg)
 
 mutual
   public export
-  data Mu' : {n : Nat} -> (0 _ : SpecialList l) -> (0 _ : Vect n Type) -> TDef' (S n) a -> Type where
+  data Mu' : {n : Nat} -> (sp : SpecialList l) -> (tvars : Vect n Type) -> TDef' (S n) a -> Type where
     Inn : Ty' sp (Mu' sp tvars m :: tvars) m -> Mu' sp tvars m
 
-  public export 0
-  Tnary' : {n : Nat} -> (0 _ : SpecialList l) -> (0 _ : Vect n Type) -> Vect (2 + k) (TDefR n) -> (Type -> Type -> Type) -> Type
+  public export
+  Tnary' : {n : Nat} -> (sp : SpecialList l) -> (tvars : Vect n Type) -> Vect (2 + k) (TDefR n) -> (Type -> Type -> Type) -> Type
   Tnary' sp tvars [x, y]              c = c (Ty' sp tvars x) (Ty' sp tvars y)
   Tnary' sp tvars (x :: y :: z :: zs) c = c (Ty' sp tvars x) (Tnary' sp tvars (y :: z :: zs) c)
 
@@ -53,12 +55,12 @@ mutual
   |||
   ||| @sp : The mapping between TDefs and the specialised version as an Idris type
   ||| @tvars : The list of types that will be used to fill all free variables
-  public export 0
-  Ty' : {n : Nat} -> (sp : SpecialList l) -> (0 tvars : Vect n Type) ->  TDefR n -> Type
+  public export
+  Ty' : {n : Nat} -> (sp : SpecialList l) -> (tvars : Vect n Type) ->  TDefR n -> Type
   Ty' sp tvars T0             = Void
   Ty' sp tvars T1             = Unit
-  Ty' sp tvars (TSum xs) {n}  = Tnary' sp tvars xs Either
-  Ty' sp tvars (TProd xs) {n} = Tnary' sp tvars xs Pair
+  Ty' sp tvars (TSum xs) {n}  = assert_total $ Tnary' sp tvars xs Either
+  Ty' sp tvars (TProd xs) {n} = assert_total $ Tnary' sp tvars xs Pair
   Ty' sp tvars (TVar v)       = Vect.index v tvars
   Ty' sp tvars (RRef i)       = Vect.index i tvars
   Ty' sp tvars (TMu m) = case (depLookup sp (TMu m)) of
@@ -84,25 +86,25 @@ public export
 TyMuPrf : {n, k : Nat} -> {ts : Vect n Type} -> (td : Vect k (String, TDefR (S n) )) -> Ty' [] ts (TMu td) = Mu' [] ts (args td)
 TyMuPrf td = believe_me $ Refl {x=Mu' [] ts (args td)}
 
-public export 0
-Ty : {n : Nat} -> (0 _ : Vect n Type) -> TDefR n -> Type
+public export
+Ty : {n : Nat} -> (tvars : Vect n Type) -> TDefR n -> Type
 Ty = Ty' []
 
-public export 0
+public export
 Tnary : {n : Nat} -> Vect n Type -> Vect (2 + k) (TDefR n) -> (Type -> Type -> Type) -> Type
 Tnary tvars tds op = Tnary' [] tvars tds op
 
-public export 0
+public export
 Mu : {n : Nat} -> Vect n Type -> TDef' (S n) a -> Type
 Mu args td = Mu' [] args td
 
-public export 0
+public export
 Inn' : Ty (Mu tvars m :: tvars) m -> Mu tvars m
 Inn' v = Inn (believe_me v)
 
 ||| Converts a typedefs of `n` free variables into a type constructor that expects n arguments
-public export 0
-AlphaTy : {n : Nat} -> (0 _ : SpecialList l) -> TDefR n -> TypeConstructor n
+public export
+AlphaTy : {n : Nat} -> (sp : SpecialList l) -> TDefR n -> TypeConstructor n
 AlphaTy sp tdef = ReverseVect (\args =>  Ty' sp args tdef)
 
 public export

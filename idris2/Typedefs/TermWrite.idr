@@ -1,11 +1,11 @@
 module Typedefs.TermWrite
 
-{-
 import Typedefs.Idris
 import Typedefs.DependentLookup
 import Typedefs.TypedefsDecEq
 import Typedefs.Names
 
+import Data.List
 import Data.Vect
 import Data.Vect.Elem
 
@@ -15,7 +15,6 @@ import Language.JSON
 
 -- serialization
 
-{-
 ||| A proof that each Type in the indexed list can be converted into the target type
 public export
 data HasGenericWriters : (target : Type) -> (0 types : Vect n Type) -> Type where
@@ -52,7 +51,7 @@ injectionInv (a::b::c::tds) (Right y) =
   let (i' ** y') = injectionInv (b::c::tds) y in (FS i' ** y')
 
 partial
-getVariable : {0 ts : Vect (S n) Type} ->
+getVariable : {ts : Vect (S n) Type} ->
               (i : Fin (S n)) ->
               (ws : HasGenericWriters target ts) -> index i ts -> target
 getVariable FZ (f :: z) x {ts = (y :: xs)} = f x
@@ -61,15 +60,15 @@ getVariable (FS (FS y)) (w :: ws) x = getVariable (FS y) ws x
 -- getVariable (FS _) _ _ = ?This_is_a_bug
 
 total
-getVariable' : {0 ts : Vect (S n) Type} ->
+getVariable' : {ts : Vect (S n) Type} ->
               (i : Fin (S n)) ->
               (ws : HasGenericWriters target ts) -> index i ts -> target
 getVariable' i ws = assert_total $ getVariable i ws
 
 ||| Given a vector of TDef n and n types to fill its holes, return the vector of types correpondng to those tdefs
-FromTDefToTy : {n : Nat} -> (_ : SpecialList l) -> (0 _ : Vect n Type) -> Vect k (TDefR n) -> Vect k Type
+FromTDefToTy : {n : Nat} -> (_ : SpecialList l) -> (types : Vect n Type) -> Vect k (TDefR n) -> Vect k Type
 FromTDefToTy sp types [] = []
-FromTDefToTy sp types (v :: vs) = Ty' sp types v :: FromTDefToTy sp types vs
+FromTDefToTy sp types (v :: vs) = assert_total (Ty' sp types v) :: FromTDefToTy sp types vs
 --FromTDefToTy sp types vs = map (assert_total $ Ty' sp types) vs
 
 ||| Magically generate the writers for a vector of TDefs in argument position
@@ -77,8 +76,8 @@ FromTDefToTy sp types (v :: vs) = Ty' sp types v :: FromTDefToTy sp types vs
 ||| For some reason this couldn't be placed in a where-clause inside `serialise`. The lookup for
 ||| instances of `TDefSerialiser` would get confused and say that there aren't any suitable instances
 ||| for `serialiser`. That's why we simply pass it as a partially applied function
-makeWriters : {target : Type} -> {0 sp : SpecialList l} ->
-               (0 tys : Vect n Type) ->
+makeWriters : {target : Type} -> {sp : SpecialList l} ->
+               (tys : Vect n Type) ->
                (spp : HasSpecialisedWriter target sp) ->
                (gen : HasGenericWriters target tys) ->
                ((tdef : TDefR n) -> Ty' sp tys tdef -> target) ->
@@ -86,21 +85,20 @@ makeWriters : {target : Type} -> {0 sp : SpecialList l} ->
                HasGenericWriters target (FromTDefToTy sp tys vs)
 makeWriters tys spp gen fn [] = []
 makeWriters tys spp gen fn (td :: tds) = (fn td) :: (makeWriters tys spp gen fn tds)
-{-
 
 public export
 interface TDefSerialiser (target : Type) where
   unitVal : target
 
   ||| How to convert a sum into a term in the target type
-  foldSum : {0 ts : Vect n Type} -> {sp : SpecialList l} ->
+  foldSum : {n, l, k : Nat} -> {ts : Vect n Type} -> {sp : SpecialList l} ->
             HasSpecialisedWriter target sp ->
             HasGenericWriters target ts ->
             (args : Vect (2 + k) (TDefR n)) ->
             Ty' sp ts (TSum args) -> target
 
   ||| How to convert a prod into a term in the target type
-  foldProd : {0 ts : Vect n Type} -> {sp : SpecialList l} ->
+  foldProd : {n, l, k: Nat} -> {ts : Vect n Type} -> {sp : SpecialList l} ->
              HasSpecialisedWriter target sp ->
              HasGenericWriters target ts ->
              (args : Vect (2 + k) (TDefR n)) ->
@@ -121,7 +119,7 @@ interface TDefSerialiser (target : Type) where
 ||| @spp : A proof that every specialised constructor and its arguments have a writer
 ||| @ws : A proof that every type parameter has a writer
 serialise : {target : Type} -> TDefSerialiser target =>
-            {n, l : Nat} -> {0 ts : Vect n Type} -> {sp : SpecialList l} ->
+            {n, l : Nat} -> {ts : Vect n Type} -> {sp : SpecialList l} ->
             (spp : HasSpecialisedWriter target sp) ->
             (ws : HasGenericWriters target ts) ->
             (td : TDefR n) ->
@@ -151,19 +149,17 @@ serialise spp {sp} {ts} {n} ws (TApp (TName _ def) ys) x with (depLookup sp def)
 
 -- first lookup the specialisation context
 serialise spp {sp} writers (TMu td) x {ts} with (depLookup sp (TMu td)) proof p
-  serialise spp {sp} writers (TMu td) x {ts} | Nothing =
+  serialise spp {sp} writers (TMu td) x {ts} | Nothing = ?h1
       let writer : Mu ts (args td) -> target
           writer = believe_me $ serialise [] writers (TMu td) -- this should be fixed after #1419
           newX : Mu' sp tvars (args td) --
-          newX = believe_me x           -- Those three ridiculous lines are to match on `x` since Ty does no reduce
-          (Inn x') := newX              --
-          inner := assert_total $ serialise spp {ts=(Mu ts (args td))::ts} (writer :: writers) (args td) (believe_me x')
+          newX = believe_me x in        -- Those three ridiculous lines are to match on `x` since Ty does no reduce
+      let (Inn x') = newX               --
+          inner = assert_total $ serialise spp {ts=(Mu ts (args td))::ts} (writer :: writers) (args td) (believe_me x')
        in muPrefix inner
   serialise spp {sp = sp} writers (TMu td) x {ts = ts} | (Just (def ** constr ** prf)) =
     lookupTypeReplacement prf spp {args=ts} writers (believe_me x) -- again, this would not be necessary if it wasn't
                                                                    -- for #1419
-{-
-
 ---------------------------------------------------------------------------------------------
 -- Strings                                                                                 --
 ---------------------------------------------------------------------------------------------
@@ -174,18 +170,18 @@ TDefSerialiser String where
   unitVal = "()"
 
   foldSum sp ws ([x,_]) (Left l) =
-    parens $ "left "  ++ serialise sp ws x l
+    parens $ "left "  ++ assert_total (serialise sp ws x l)
   foldSum sp ws ([_,y]) (Right r) =
-    parens $ "right " ++ serialise sp ws y r
+    parens $ "right " ++ assert_total (serialise sp ws y r)
   foldSum sp ws ((x::_::_::_)) (Left l) =
-    parens $ "left "  ++ serialise sp ws x l
+    parens $ "left "  ++ assert_total (serialise sp ws x l)
   foldSum sp ws ((_::y::z::zs)) (Right r) =
-    parens $ "right " ++ serialise sp ws (TSum (y::z::zs)) r
+    parens $ "right " ++ assert_total (serialise sp ws (TSum (y::z::zs)) r)
 
   foldProd sp ws ([x,y]) (a, b) =
-    parens $ "both "  ++ serialise sp ws x a ++ " " ++ serialise sp ws y b
+    parens $ "both "  ++ assert_total (serialise sp ws x a) ++ " " ++ assert_total (serialise sp ws y b)
   foldProd sp ws ((x::y::z::zs)) (a, b) =
-    parens $ "both "  ++ serialise sp ws x a ++ " " ++ serialise sp ws (TProd (y::z::zs)) b
+    parens $ "both "  ++ assert_total (serialise sp ws x a) ++ " " ++ assert_total (serialise sp ws (TProd (y::z::zs)) b)
 
   muPrefix inner = "(inn " ++ inner ++ ")"
 
@@ -216,7 +212,6 @@ TDefSerialiser String where
 -- JSON                                                                                    --
 ---------------------------------------------------------------------------------------------
 
-
 makeFields : Nat -> List String
 makeFields n = map (("_" ++) . show) [0 .. n]
 
@@ -230,14 +225,14 @@ TDefSerialiser JSON where
   foldProd sp ws args tv =  let res = serialiseTNaryProd sp ws args tv in
                             JObject (zip (makeFields (length args)) res)
     where
-      serialiseTNaryProd : {sp : SpecialList l} ->
+      serialiseTNaryProd : {k : Nat} -> {sp : SpecialList l} ->
                            HasSpecialisedWriter JSON sp -> HasGenericWriters JSON ts ->
                            (defs: Vect (2 + k) (TDefR n)) ->
                            Tnary' sp ts defs Pair -> List JSON
-      serialiseTNaryProd sp writers [x, y] (a, b) =
-        [serialise sp writers x a, serialise sp writers y b]
+      serialiseTNaryProd sp writers [x, y] {k=Z} (a, b) =
+        [assert_total (serialise sp writers x a), assert_total (serialise sp writers y b)]
       serialiseTNaryProd sp writers (x :: y :: z :: zs) (a , b) =
-        serialise sp writers x a :: serialiseTNaryProd sp writers (y :: z :: zs) b
+        assert_total (serialise sp writers x a) :: serialiseTNaryProd sp writers (y :: z :: zs) b
 
   -- Mus are identified by an obect with a single `inn` field
   muPrefix inner =  JObject [("inn",  inner)]
@@ -245,7 +240,5 @@ TDefSerialiser JSON where
   -- Sums are serialized as { "_x" : term } where x is the index in the sum
   foldSum sp ws args tv =
     let (i ** def) = injectionInv args tv in
-        JObject [("_"++ show (toNat i), assert_total $ serialise sp ws (index i args) def)]
+        JObject [("_"++ show (finToNat i), assert_total $ serialise sp ws (index i args) def)]
 
-{-
--}
