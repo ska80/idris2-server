@@ -12,6 +12,8 @@ import Server.Utils
 import URL
 import Requests
 
+import Debug.Trace
+
 -- A Handler attemps to parse the request and uses the current state to compute a response
 Handler : Type -> Type
 Handler state
@@ -90,7 +92,7 @@ stringSig ref n p parser printer handler state path query =
     updateRet (End rec (Update val st) ret) {n=1} ref (_, newState) = writeIORef ref newState
     updateRet (Str _ p) {n=S n} ref y = updateRet p ref y
     updateRet (Tpe _ p) {n=S n} ref y = updateRet p ref y
-    updateRet _ _ _ = ?impossible -- bug with coverage checking
+    updateRet p _ _ = putStrLn ("cannot update, got path " ++ show p)
 
     checkLength : Show a => List a -> ServerM (Vect n a)
     checkLength ls = maybeToEither (WrongArgumentLength n ls p )

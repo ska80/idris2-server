@@ -3,6 +3,7 @@ module Server
 -- import Control.Monad.Syntax
 import Control.Monad.Identity
 import Control.Monad.Converter
+
 import Data.IORef
 import public Data.String.ParserInterface
 import Data.Either
@@ -11,6 +12,8 @@ import public Data.List
 import Data.List1
 import Data.Strings
 import Decidable.Equality
+
+import Server.Utils
 
 import public Records
 
@@ -86,10 +89,13 @@ data PathComp : Nat -> (state : Type) -> Type where
   Str : String -> PathComp n st -> PathComp (S n) st
   Tpe : (t : Type) -> HasParser t => PathComp n st -> PathComp (S n) st
 
+export
 Show (PathComp n st) where
-  show (End q update ret) = "return"
+  show (End Nothing (Query _) ret) = "returns: '" ++ ShowType ret ++ "'"
+  show (End Nothing (Update body _) ret) = "returns: '" ++ ShowType ret ++ "' body : \{ShowType body}'"
+  show (End (Just q) update ret) = show q ++ "/" ++ assert_total (show (End Nothing update ret))
   show (Str x y) = x ++ "/" ++ show y
-  show (Tpe t x) = "type/" ++ show x
+  show (Tpe t x) = ":\{ShowType t}/" ++ show x
 
 ||| Convert a PathComp into a function type
 public export

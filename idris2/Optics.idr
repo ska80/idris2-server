@@ -1,11 +1,12 @@
 module Optics
 
 import Data.Vect
-import Products
+import public Products
 
 infixl 5 :+:
 infixl 6 &&
 
+public export
 (:+:) : Type -> Type -> Type
 (:+:) = Either
 
@@ -72,6 +73,12 @@ implementation Profunctor (Prism a b) where
 implementation Profunctor (Traversal a b) where
   dimap f g (MkTrav extract) = MkTrav ((\(n' ** (v, fv)) => (n' ** (v, g . fv))) . extract . f)
 
+Fn : Type -> Type -> Type
+Fn a b = a -> b
+
+implementation Profunctor Fn where
+  dimap f g h x = g (h (f x))
+
 parameters (p : Type -> Type -> Type)
 
   public export
@@ -95,17 +102,17 @@ parameters (p : Type -> Type -> Type)
   TraversalP a b s t = Cartesian p => CoCartesian p => Monoidal p =>
                        Optic a b s t
 
+export
+lens2Pro : Cartesian p => Lens a b s t -> Optic p a b s t
+lens2Pro (MkLens get set) = (dimap (\x => (x, get x)) set) . second
 
+export
+prism2Pro : CoCartesian p => Prism a b s t -> Optic p a b s t
+prism2Pro (MkPrism match build) = dimap match (either id build) . right
 
---           ┌──────┐
--- (v : s) >─┤      ├─> f v
---           │      │
---       t <─┤      ├─< b
---           └──────┘
-public export
-record DependentLens (s, a, b : Type) (f : s -> Type) where
-  constructor MkDepLens
-  get : (v : s) -> f v
-  set : s -> b -> t
+export
+seq : Profunctor p => Optic p a b s t -> Optic p s t x y -> Optic p a b x y
+seq f g z = g (f z)
 
-
+stack : Profunctor p => Optic p a b s t -> Optic p q r x y -> Optic p (a,q) (b,r) (s, x) (t, y)
+stack f g = ?nads
