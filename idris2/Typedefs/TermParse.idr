@@ -6,6 +6,7 @@ import Typedefs.Idris
 import Data.Vect
 import Data.Fin
 import Data.String
+import Data.Either
 
 import Language.JSON
 
@@ -17,16 +18,13 @@ import Language.JSON
 
 -- A simple Parser, a wrapper for a parsing function `a -> m (b, a)`
 data SParser : (Type -> Type) -> Type -> Type -> Type where
-  MkSParser : Monad m => (source -> m (target, source)) -> SParser m source target
+  MkSParser : (source -> m (target, source)) -> SParser m source target
 
--- Special syntax for a parser using monad `m`
-syntax [a] "-[" [m] "]->" [b] = SParser m a b
-
-run : (src -[m]-> trg) -> src -> m (trg, src)
+run : (SParser m src trg) -> src -> m (trg, src)
 run (MkSParser p) = p
 
-runParser : (Functor m) => (src -[m]-> trg) -> src -> m trg
-runParser (MkSParser p) s = Basics.fst <$> p s
+runParser : (Functor m) => SParser m src trg -> src -> m trg
+runParser (MkSParser p) s = fst <$> p s
 
 Monad m => Functor (SParser m s) where
   map f (MkSParser ma) = MkSParser $ \bs => do
@@ -54,22 +52,24 @@ alt (MkSParser f) (MkSParser g) =
 ||| A proof that each type variable has a suitable parser
 data HasParser : (Type -> Type) -> (format : Type) -> Vect n Type -> Type where
   Nil : HasParser m format []
-  (::) : Monad m => (src -[m]-> trg) -> HasParser m src ts -> HasParser m src (trg :: ts)
+  (::) : (SParser m src trg) -> HasParser m src ts -> HasParser m src (trg :: ts)
 
 namespace SpecialisedParser
   ||| Prove that there is a parser function for every type in the specialisation list
+  public export
   data HasSpecialisedParser : (m : Type -> Type) -> (format : Type) -> (sp : SpecialList l) -> Type where
     Nil : HasSpecialisedParser m format []
     (::) : {n : Nat} -> {def : TDefR n} -> {constr : TypeConstructor n} ->
-           ({args : Vect n Type} -> HasParser m fmt args -> (fmt -[m]-> ApplyVect constr args)) ->
+           ({args : Vect n Type} -> HasParser m fmt args -> SParser m fmt (ApplyVect constr args)) ->
            HasSpecialisedParser m fmt sps ->
            HasSpecialisedParser m fmt ((n ** (def, constr)) :: sps)
 
 lookupParser : Monad m => {sp : SpecialList l } -> {format : Type} ->
+               {td : _} ->
                (e : Elem (n ** (td, constr)) sp) ->
                (spp : HasSpecialisedParser m format sp) ->
                {args : Vect n Type} -> HasParser m format args ->
-               (format -[m]-> ApplyVect constr args)
+               SParser m format (ApplyVect constr args)
 lookupParser Here (p :: sps) = p
 lookupParser (There e) (p :: sps) = lookupParser e sps
 
@@ -80,7 +80,7 @@ makeParsers : Monad m => {format : Type} -> {sp : SpecialList l} ->
               (tys : Vect n Type) ->
               (spp : HasSpecialisedParser m format sp) ->
               (gen : HasParser m format tys) ->
-              ((tdef : TDefR n) -> (format -[m]-> (Ty' sp tys tdef))) ->
+              ((tdef : TDefR n) -> SParser m format (Ty' sp tys tdef)) ->
               (vs : Vect k (TDefR n)) ->
               HasParser m format (FromTDefToTy sp tys vs)
 makeParsers tys spp gen fn [] = []
@@ -93,38 +93,41 @@ injection sp (FS FZ) [a, b]             x = Right x
 injection sp FZ     (a :: b :: c :: ts) x = Left x
 injection sp (FS i) (a :: b :: c :: ts) x = Right (injection sp i (b :: c :: ts) x)
 
-failParser : Monad m => (error : m Void) -> s -[m]-> Void
-failParser error = MkSParser $ \arg => void <$> error
+failParser : Monad m => (error : m Void) -> SParser m s Void
+failParser error = MkSParser $ \arg => (\v => void v) <$> error
 
-getVar : {vs : Vect n Type} -> (i : Fin n) ->  HasParser m format vs -> (format -[m]-> index i vs)
+getVar : {n : Nat} -> {0 vs : Vect n Type} -> (i : Fin n) ->  HasParser m format vs -> SParser m format (index i vs)
 getVar FZ (p::ps) = p
 getVar {n = S (S n')} (FS i) (p::ps) =
   getVar {n = S n'} i ps
 
 
 public export
-interface (Monad m) => TDefDeserialiser (m : Type -> Type) format where
+interface (Monad m) => TDefDeserialiser (0 m : Type -> Type) (format : Type)  where
 
   voidError : m Void
 
-  parseProd : {ts : Vect n Type} -> {sp : SpecialList l} -> HasSpecialisedParser m format sp ->
+  parseProd : {n, k : Nat} -> {ts : Vect n Type} -> {sp : SpecialList l} ->
+              HasSpecialisedParser m format sp ->
               HasParser m format ts -> (args : Vect (2 + k) (TDefR n)) ->
-              (format -[m]-> (Ty' sp ts (TProd args)))
+              SParser m format (Ty' sp ts (TProd args))
 
-  parseSum : {ts : Vect n Type} -> {sp : SpecialList l} -> HasSpecialisedParser m format sp ->
+  parseSum : {n, k : Nat} -> {ts : Vect n Type} -> {sp : SpecialList l} ->
+             HasSpecialisedParser m format sp ->
              HasParser m format ts -> (args : Vect (2 + k) (TDefR n)) ->
-             (format -[m]-> (Ty' sp ts (TSum args)))
+             SParser m format (Ty' sp ts (TSum args))
 
-  parseMu : format -[m]-> ()
+  parseMu : SParser m format ()
   parseMu = MkSParser $ pure . MkPair ()
 
 
-deserialiser : {m : Type -> Type} -> {format : Type} -> (TDefDeserialiser m format) =>
+deserialiser : {0 m : Type -> Type} -> {format : Type} -> (TDefDeserialiser m format) =>
                {sp : SpecialList l} ->
+               {n : Nat} ->
                {ts : Vect n Type} ->
                (spp : HasSpecialisedParser m format sp) ->
                HasParser m format ts -> (td : TDefR n) ->
-               (format -[m]-> (Ty' sp ts td))
+               SParser m format (Ty' sp ts td)
 deserialiser spp ps T0 = failParser (voidError {m} {format})
 deserialiser spp ps T1 = pure ()
 deserialiser spp ps (TSum {k = k} tds) = parseSum spp ps tds
@@ -134,24 +137,32 @@ deserialiser spp {sp} ps (TMu tds) {ts} with (depLookup sp (TMu tds))
     () <- parseMu
     let muParser = assert_total $ deserialiser spp ps (TMu tds)
     parsed <- assert_total $ deserialiser spp (muParser :: ps) (args tds)
-    pure (Inn (believe_me parsed))
-  deserialiser spp ps  (TMu tds) {ts} | Just (def ** constr ** el) = do
-    lookupParser el spp ps
+--     parsed : Ty' sp (Ty' sp ts (TMu tds) :: ts) (args tds)
+-- ------------------------------
+-- val : Ty' ?sp (Mu' ?sp ?tvars ?m :: ?tvars) ?m
+    let parsed' = the (Ty' sp (Mu' sp ts (args tds) :: ts) (args tds)) (believe_me parsed)
+    let ret = the (Ty' sp ts (TMu tds)) (believe_me (Inn ?val)) -- patching up the type because it doesn't reduce
+    pure ret
+    -- pure (believe_me $ Inn (believe_me parsed))
+  deserialiser spp ps  (TMu tds) {ts} | Just (def ** constr ** el) =
+    believe_me $ lookupParser el spp ps
 deserialiser spp p (TVar i) = getVar i p
 deserialiser spp p (RRef i) = getVar i p
 deserialiser spp ps {sp} {ts} (TApp (TName name def) xs) with (depLookup sp def)
   deserialiser spp ps {sp} {ts} (TApp (TName name def) xs) | Nothing =
-    assert_total $ deserialiser spp ps (ap def xs)
+    believe_me $ assert_total $ deserialiser spp ps (ap def xs)
   deserialiser spp ps {sp} {ts} (TApp (TName name def) xs) | Just (_ ** constr ** el) =
-    lookupParser el spp (makeParsers ts spp ps (assert_total $ deserialiser spp ps) xs)
+    believe_me $ lookupParser el spp (makeParsers ts spp ps (assert_total $ deserialiser spp ps) xs)
 
 export
-deserialise : (Monad m, TDefDeserialiser m format) =>
+deserialise : {format : Type} -> (Monad m, TDefDeserialiser m format) =>
+              {n : Nat} ->
               {sp : SpecialList l} ->
               {ts : Vect n Type} ->
               HasSpecialisedParser m format sp -> HasParser m format ts -> (td : TDefR n) ->
               format -> m (Ty' sp ts td)
 deserialise spp ps td = TermParse.runParser $ deserialiser spp ps td
+
 
 ---------------------------------------------------------------------------------------------
 -- Strings                                                                                 --
@@ -160,6 +171,7 @@ deserialise spp ps td = TermParse.runParser $ deserialiser spp ps td
 -- the common TDefDeserialiser interface.                                                  --
 ---------------------------------------------------------------------------------------------
 
+{-
 namespace StringParser
   Parser' : Type -> Nat -> Type
   Parser' = Parser TParsecU (sizedtok Char)
@@ -205,11 +217,13 @@ namespace StringParser
 
   deserialiseStr : {ts : Vect n Type} -> All (StringParsers ts) -> (td : TDefR n) -> String -> Maybe (Ty ts td)
   deserialiseStr {ts} ps td s  = parseMaybe s (chooseParser td ts ps)
+-}
 
 ---------------------------------------------------------------------------------------------
 -- Binary                                                                                  --
 ---------------------------------------------------------------------------------------------
 
+{-
 fail : s -[Maybe]-> a
 fail = MkSParser $ const Nothing
 
@@ -239,6 +253,7 @@ TDefDeserialiser Maybe Bytes where
     t' <- assert_total $ deserialiser spp ps (TProd (b :: c :: tds))
     pure (ta, t')
 
+-}
 ---------------------------------------------------------------------------------------------
 -- JSON                                                                                    --
 ---------------------------------------------------------------------------------------------
@@ -275,7 +290,7 @@ parseInt = MkSParser parse
 ||| check if the key starts with an underscore and if its smaller than 2 + k
 parseKey : (k : Nat) -> String -> JSONM (Fin (2 + k))
 parseKey k "" = Left "Invalid key: empty"
-parseKey k str = do '_' <- safeHead str | Left ("Invalid key: '" ++ str ++ "'")
+parseKey k str = do '_' <- safeHead str | _ => Left ("Invalid key: '" ++ str ++ "'")
                     rest <- safeTail str
                     let i = parsePositive rest
                     index <- maybeToEither "Invalid key" i
@@ -285,12 +300,13 @@ parseKey k str = do '_' <- safeHead str | Left ("Invalid key: '" ++ str ++ "'")
       safeStrOp op str = if length str > 0 then Right (op str)
                                            else Left "expected index"
       safeHead : String -> JSONM Char
-      safeHead = assert_total $ safeStrOp strHead
+      safeHead = assert_total $ safeStrOp (flip strIndex 0)
       safeTail : String -> JSONM String
       safeTail = assert_total $ safeStrOp strTail
 
 namespace ParseProduct
   ||| A proof that each element of a product has been successfully parsed
+  public export
   data ParseProd : (sp : SpecialList l) -> Vect n Type -> Vect k (TDefR n) -> Type where
     Nil : ParseProd sp vs []
     (::) : {td : TDefR n} -> {sp : SpecialList l} -> (parsed : Ty' sp vs td) ->
@@ -307,22 +323,22 @@ jsonFail str = MkSParser (const $ Left str)
 -- we need to check all keys are in increasing order and of the format _X from 0 to l
 parseVect : List (String, JSON) -> (l : Nat) -> JSONM (Vect l JSON)
 parseVect ls n = case decEq (length ls) n of
-                      Yes prf => rewrite sym prf in Applicative.pure $ Functor.map snd (fromList ls)
+                      Yes prf => rewrite sym prf in pure $ map snd (fromList ls)
                       No _ => Left ("incompatible lengths: " ++ show (length ls)
                                     ++ " and " ++ show n)
 
 ||| Lift a function into a parser that operates on the value but does not consume it
-liftParse : Monad m => {a : Type} -> (a -> m b) -> (a -[m]-> b)
+liftParse : Monad m => {0 a : Type} -> (a -> m b) -> (SParser m a b)
 liftParse f = MkSParser (\v => flip MkPair v <$> f v)
 
-liftVal : Monad m => m b -> (a -[m]-> b)
+liftVal : Monad m => m b -> SParser m a b
 liftVal v = liftParse (const v)
 
 ||| Parses an object with a single field. Returns the parsed key and the json as leftover
 parseSingleObject : JParser String
 parseSingleObject = do
     [v] <- parseObject
-        | jsonFail "Object doens't contain exactly 1 element"
+        | _ => jsonFail "Object doens't contain exactly 1 element"
     MkSParser (const $ pure v)
 
 expectSingleField : String -> JParser ()
@@ -365,3 +381,5 @@ TDefDeserialiser (Either String) JSON where
       pure $ injProd sp res
 
 
+{-
+-}

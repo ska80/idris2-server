@@ -69,7 +69,6 @@ getVariable' i ws = assert_total $ getVariable i ws
 FromTDefToTy : {n : Nat} -> (_ : SpecialList l) -> (types : Vect n Type) -> Vect k (TDefR n) -> Vect k Type
 FromTDefToTy sp types [] = []
 FromTDefToTy sp types (v :: vs) = assert_total (Ty' sp types v) :: FromTDefToTy sp types vs
---FromTDefToTy sp types vs = map (assert_total $ Ty' sp types) vs
 
 ||| Magically generate the writers for a vector of TDefs in argument position
 |||
