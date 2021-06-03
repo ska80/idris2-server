@@ -224,7 +224,7 @@ parameters (state : Type) {auto showI : Show state}
 ||| applied functions.
 public export
 Signature : (state : Type) -> Show state => Path -> Type
-Signature state path = PathList $ (toComponents state [] path)
+Signature state path = PathList (toComponents state [] path)
 
 FromSignature : {path : Path} -> Signature () path
              -> List (n ** p : PathComp n () ** (Args p -> Ret p))

@@ -1,4 +1,4 @@
-module Todo
+module Examples.Todo
 
 import Server
 import Engine
@@ -36,28 +36,21 @@ getTodo : Path
 getTodo = "todo" / Cap "user" Int / Returns (List Todo) Get
 
 setTodo : Path
-setTodo = "todo" / Cap "User" Int /
-          Ends (Just $ "length" :=: Nat) (Vect n Todo)
+setTodo = "todo" / Cap "User" Int / Returns (List Todo) (Post Todo)
 
-{-
+TodoAPI : Path
+TodoAPI = Split [getTodo, setTodo]
+
 TodoResource : Path
 TodoResource = "todo" / Cap "User" Int / Resource Todo (List Todo)
 
 ServerState : Type
 ServerState = SortedMap Int (List Todo)
 
-TodoAPI : Path
-TodoAPI = Split [getTodo, setTodo]
-
 initial : ServerState
 initial = empty
 
--- Optic p (List Todo) Todo Int (SortedMap Int (List Todo))
--- Optic p a           b    s   t = p a b -> p s t
--- dimap : (s -> a) -> (b -> t) -> p a b -> p s t
--- dimap : (Int -> List Todo) (Todo -> (SortedMap Int (List Todo))
-
-todoImpl : Signature ServerState TodoResource
+todoImpl : Signature ServerState TodoAPI
 todoImpl = [findTodo, updateTodo]
   where
     findTodo : Int -> ServerState -> List Todo
@@ -67,6 +60,7 @@ todoImpl = [findTodo, updateTodo]
     updateTodo id todo state = (todo :: findTodo id state, update id (todo ::) state)
 
 main : IO ()
-main = Engine.newServer (SortedMap.empty {k=Int} {v=List Todo}) TodoAPI todoImpl
+main = Engine.newServer empty TodoResource todoImpl
+
 {-
 -}
