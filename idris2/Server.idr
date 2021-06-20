@@ -11,6 +11,7 @@ import Data.Vect
 import public Data.List
 import Data.List1
 import Data.Strings
+import Data.String.Parser
 import Decidable.Equality
 
 import Server.Utils
@@ -78,11 +79,6 @@ Args4Req (Query st) = Z
 Args4Req (Update val st) = 1
 
 ||| A Type for full path components.
--- public export
--- data PathComp : Nat -> Type -> Type where
---   End : (q : Maybe Record) -> (update : RequestBody) -> (ret : Type) -> Show ret => PathComp Z (RTy update)
---   Str : String -> PathComp n rqt -> PathComp (S n) rqt
---   Tpe : (t : Type) -> HasParser t => PathComp n rqt -> PathComp (S n) rqt
 public export
 data PathComp : Nat -> (state : Type) -> Type where
   End : (q : Maybe Record) -> (update : RequestBody) -> (ret : Type) -> Show ret => PathComp (Args4Req update) (StTy update)
@@ -146,6 +142,12 @@ Ret (Str _ ps) = Ret ps
 Ret (Tpe _ ps) = Ret ps
 
 public export
+RetTy : PathComp n st -> Type
+RetTy (End q u ret) = ret
+RetTy (Str _ ps) = RetTy ps
+RetTy (Tpe _ ps) = RetTy ps
+
+public export
 fromHandle : (path : PathComp n st) -> st -> (Args path -> Ret path) -> ParseArgs path -> Ret path
 fromHandle (End Nothing (Query st) ret) state f x = f state
 fromHandle (End (Just y) (Query st) ret) state f x = f (x, state)
@@ -174,6 +176,12 @@ public export
 data PathList : (0 _ : List (n ** PathComp n st)) -> Type where
   Nil : PathList []
   (::) : (p : PathCompToType (DPair.snd t)) -> PathList ts -> PathList (t :: ts)
+
+||| Concatenate two PathLists
+export
+cat : PathList xs -> PathList ys -> PathList (xs ++ ys)
+cat [] y = y
+cat (p :: x) y = p :: cat x y
 
 public export
 TypeList : Type
@@ -269,15 +277,18 @@ public export
 ServerM : Type -> Type
 ServerM = Either ServerError
 
-parseToServerError : Parser a -> String -> ServerM a
-parseToServerError p s = maybeToEither (ParseError $ "could not parse " ++ s) (p s)
+-- Attempts to parse a string completely and return a server error if it cannot
+parseToServerError : HasParser a => String -> ServerM a
+parseToServerError input =
+  maybeToEither (ParseError $ "could not parse " ++ input) (parse input)
 
+-- attempts to parse a list of key-values from a record
 public export
 fieldParser : (rec : Record) -> List (String, String) -> ServerM (IRecord rec)
 fieldParser [] [] = pure []
 fieldParser ((f :=: t) :: rs) ((key, value) :: xs) with (decEq key f)
   fieldParser ((f :=: t) :: rs) ((key, value) :: xs) | Yes with_pat = do
-       v <- parseToServerError (parse {t}) value
+       v <- parseToServerError {a=t} value
        rest <- fieldParser rs xs
        pure (f :=: v :: rest)
   fieldParser ((f :=: t) :: rs) ((key, value) :: xs) | No with_pat =
@@ -294,9 +305,9 @@ makeParser : (path : PathComp n st) ->
              Vect n String ->
              ServerM (ParseArgs path)
 makeParser (End Nothing (Query st) _) query [] = Right ()
-makeParser (End Nothing (Update val  st) _) query [v] = parseToServerError (parse {t=val}) v
+makeParser (End Nothing (Update val  st) _) query [v] = parseToServerError {a=val} v
 makeParser (End (Just rec) (Query st) t) query [] = fieldParser rec query
-makeParser (End (Just rec) (Update val st) t) query [v] = do v' <- parseToServerError (parse {t=val}) v
+makeParser (End (Just rec) (Update val st) t) query [v] = do v' <- parseToServerError {a=val} v
                                                              qu <- fieldParser rec query
                                                              pure (qu, v')
 makeParser (Str s ps) query (z :: xs) =
@@ -304,7 +315,7 @@ makeParser (Str s ps) query (z :: xs) =
      then makeParser ps query xs
      else Left $ UnexpectedPath s z
 makeParser (Tpe t ps) query (z :: xs) =
-  [| MkPair (parseToServerError (parse {t}) z)
+  [| MkPair (parseToServerError {a=t} z)
             (makeParser ps query xs) |]
 
 {-

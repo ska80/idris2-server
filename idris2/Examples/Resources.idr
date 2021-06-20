@@ -1,0 +1,3 @@
+module Examples.Resources
+
+

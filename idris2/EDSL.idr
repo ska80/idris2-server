@@ -1,7 +1,9 @@
 module EDSL
 
 import Server
+import Optics
 
+%ambiguity_depth 5
 
 infixr 5 /
 
@@ -38,3 +40,14 @@ namespace EDSL
                             Ends Nothing ret (Post val)
                            ]
 
+  public export
+  Lens : {a, b : Type} -> Lens a a b (a, b) -> HasParser b => Show a => Path
+  Lens opt = Split [ Returns a Get, Returns a (Post b) ]
+
+infixr 5 ~/
+
+(~/) : Path -> Path -> Path
+(~/) (Ends queryItems returnType v) y = y
+(~/) (Plain x ps) y = Plain x (ps ~/ y)
+(~/) (Capture name t ps) y = Capture name t (ps ~/ y)
+(~/) (Split xs) y = Split (map ( ~/ y) xs)

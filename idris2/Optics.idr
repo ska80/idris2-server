@@ -21,6 +21,10 @@ record Lens (a, b, s, t : Type) where
   get : s -> a
   set : s :*: b -> t
 
+export
+compose : Lens a b s t -> Lens s t x y -> Lens a b x y
+compose (MkLens g1 s1) (MkLens g2 s2) = MkLens (\z => g1 (g2 z)) (\z => s2 (fst z, s1 (g2 (fst z), snd z)))
+
 public export
 record Prism (a, b, s, t: Type) where
   constructor MkPrism
@@ -73,11 +77,19 @@ implementation Profunctor (Prism a b) where
 implementation Profunctor (Traversal a b) where
   dimap f g (MkTrav extract) = MkTrav ((\(n' ** (v, fv)) => (n' ** (v, g . fv))) . extract . f)
 
+public export
 Fn : Type -> Type -> Type
 Fn a b = a -> b
 
+public export
 implementation Profunctor Fn where
   dimap f g h x = g (h (f x))
+
+public export
+implementation Cartesian Fn where
+  first arg = \x => (arg (fst x), snd x)
+  second arg = \x => (fst x, arg (snd x))
+
 
 parameters (p : Type -> Type -> Type)
 
