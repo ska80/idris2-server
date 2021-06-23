@@ -9,7 +9,7 @@ infixr 5 /
 
 public export
 data Capt : Type where
-  Cap : (name : String) -> (t : Type) -> HasParser t => Capt
+  Cap : (name : String) -> (t : Type) -> HasParser t => Documented t => Capt
 
 public export
 interface PathBuilder t where
@@ -25,23 +25,23 @@ PathBuilder Capt where
 
 namespace EDSL
   public export
-  Query :  Record -> (t : Type) -> Show t =>
+  Query :  Record -> (t : Type) -> Documented t =>
          (v : Verb) -> Path
   Query rec t v = Ends (Just rec) t v
 
   public export
-  Returns : (t : Type) -> Show t =>
+  Returns : (t : Type) -> Documented t =>
           (v : Verb) -> Path
   Returns t v = Ends Nothing t v
 
   public export
-  Resource : (val : Type) -> (ret : Type) -> Show ret => HasParser val => Path
+  Resource : (val : Type) -> (ret : Type) -> Documented ret => HasParser val => Documented val => Path
   Resource val ret = Split [Ends Nothing ret Get,
                             Ends Nothing ret (Post val)
                            ]
 
   public export
-  Lens : {a, b : Type} -> Lens a a b (a, b) -> HasParser b => Show a => Path
+  Lens : {a, b : Type} -> Lens a a b (a, b) -> HasParser b => Documented a => Documented b => Path
   Lens opt = Split [ Returns a Get, Returns a (Post b) ]
 
 infixr 5 ~/

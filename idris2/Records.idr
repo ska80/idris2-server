@@ -2,20 +2,20 @@ module Records
 
 import Data.String.ParserInterface
 import Server.Utils
+import Interfaces
 
 %default total
 
 infixl 9 :=:
 
-
 ||| Description of a record row with key and type
 public export
 data Row : String -> Type -> Type where
-  (:=:) : (s : String) -> (t : Type) -> HasParser t => Row s t
+  (:=:) : (s : String) -> (t : Type) -> HasParser t => Display t => Default t => Row s t
 
 export
 Show (Row r t) where
-  show (s :=: t) = "\{s} :=: \{assert_total $ ShowType t}"
+  show (s :=: t) = "\{s} :=: \{assert_total $ display {t}}"
 
 public export
 data Record : Type where
@@ -29,3 +29,4 @@ printList (x :: y) = show x :: printList y
 export
 Show Record where
   show rec = show (printList rec)
+

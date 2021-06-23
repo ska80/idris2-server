@@ -8,6 +8,8 @@ import Data.IORef
 import Data.IO.Logging
 import Data.String
 import Data.String.Parser
+import Text.PrettyPrint.PrettyPrinter
+import Documentation as Doc
 
 %hide Prelude.(/)
 infixr 5 /
@@ -73,7 +75,7 @@ implGetLights = lightsLens.get
 ||| Given a path component, extend it with a lens
 ExtendPath : {newFocus : Type}
           -> (path : PathComp n st)
-          -> Show newFocus
+          -> Documented newFocus
           => Lens newFocus newFocus (RetTy path) (RetTy path)
           -> String
           -> PathComp (S n) st
@@ -85,7 +87,7 @@ ExtendPath (Tpe t z) x y = Tpe t (ExtendPath z x y)
 ||| Given a path component and a lens, derive the implementation for the extended path
 ExtendComponent : {newFocus : Type} -> (path : PathComp n st)
                -> (impl : PathCompToType path)
-               -> Show newFocus
+               -> Documented newFocus
                => (lens : Lens newFocus newFocus (RetTy path) (RetTy path))
                -> (comp : String)
                -> PathCompToType (ExtendPath path lens comp)
@@ -115,12 +117,13 @@ data ServerTree : Type -> Type where
   Prefix : String -> ServerTree st -> ServerTree st
   Fork : List (ServerTree st) -> ServerTree st
 
-Ret : (ret : Type) -> Show ret => (st : Type) -> Show st => (verb : Verb) -> PathComp (case verb of Get => 0; Post _ => 1) st
+Ret : (ret : Type) -> Documented ret => (st : Type) -> Show st => (verb : Verb) ->
+      PathComp (case verb of Get => 0; (Post _) => 1) st
 Ret ret st Get = End Nothing (Query st) ret
 Ret ret st (Post arg) = End Nothing (Update arg st) ret
 
 -- fc for "focus" and "st" fot "state"
-ResourceLens : {fc, st : Type} -> Show fc => HasParser fc => Show st => Lens fc fc st (fc, st) -> ServerTree st
+ResourceLens : {fc, st : Type} -> Documented fc => HasParser fc => Show st => Lens fc fc st (fc, st) -> ServerTree st
 ResourceLens lens = Fork
   [ Wrap (Ret fc st Get :|: lens.get)
   , Wrap (Ret fc st (Post fc) :|: fixup lens.set)
@@ -130,7 +133,7 @@ interface EDSL ty where
   (/) : ty -> PathComp n st -> PathComp (S n) st
 
 data TyArg : Type where
-  Ty : (ty : Type) -> HasParser ty => TyArg
+  Ty : (ty : Type) -> HasParser ty => Documented ty => TyArg
 
 implementation EDSL TyArg where
   (Ty ty) / ps = Tpe ty ps
@@ -140,7 +143,7 @@ implementation EDSL String where
 
 data IsResource : ServerTree st -> (fc, st : Type) -> Lens fc fc st (fc, st) -> Type where
   IsPrefix : IsResource ts fc st lens -> IsResource (Prefix p ts) fc st lens
-  FoundResource : {fc, st : Type} -> Show fc => HasParser fc => Show st => {lens : Lens fc fc st (fc, st)} ->
+  FoundResource : {fc, st : Type} -> Documented fc => HasParser fc => Show st => {lens : Lens fc fc st (fc, st)} ->
                                                      {res : ServerTree st} ->
                                                      {same : res === ResourceLens lens} ->
                   IsResource res fc st lens
@@ -150,7 +153,7 @@ composeStates x y = MkLens (x.get . y.get) (\(oldSt, newVal) =>
                         (newVal , snd $ y.set (oldSt, x.set (y.get oldSt, newVal))))
 
 (~/) : {newFc : Type} -> (tree : ServerTree st) -> {auto res : IsResource tree fc st lens} ->
-       Show newFc => HasParser newFc =>
+       Documented newFc => HasParser newFc =>
        String -> Lens newFc newFc fc fc -> ServerTree st
 (~/) (Prefix p ts) {res = (IsPrefix x)} comp newLens =
   Prefix p ((~/) ts {res=x} comp newLens)
@@ -187,9 +190,6 @@ SimpleAPI = Split [ "boiler" / Returns Bool Get
                   , "lights" / Returns Lights Get
                   , "lights" / Returns Lights (Post Lights)]
 
-main : IO ()
-main = runServer ExtendedPath initial
-
 -- HomeAPI = (MkResource "home" HomeState) -< [ MkExt "boiler" BoilerLens
 --                                            , MkExt "lights" LightsLens -< [ MkExt "kitchen" FstLens
 --                                                                           , MkExt "living" SndLens
@@ -218,25 +218,32 @@ FullPath : ServerTree HomeState
 FullPath = Prefix "home" (Fork [ LensPath
                                , LightsPath])
 
-ServerToPathComp : List (ServerImpl st) -> (path : List (n ** PathComp n st) ** PathList path)
-ServerToPathComp [] = ([] ** [])
-ServerToPathComp ((path :|: impl) :: xs) =
-  let (path' ** imp') = ServerToPathComp xs in ((_ ** path) :: path' ** impl :: imp')
 
-serverToPaths : ServerTree st -> List (ServerImpl st)
-serverToPaths (Wrap x) = [x]
-serverToPaths (Prefix str paths) =
-  map (insertPrefix str) (serverToPaths paths)
-serverToPaths (Fork xs) = xs >>= serverToPaths
+fromServerTree : ServerTree st -> (path : List (n ** PathComp n st) ** PathList path)
+fromServerTree = ServerToPathComp . serverToPaths
+  where
+  ServerToPathComp : List (ServerImpl st) -> (path : List (n ** PathComp n st) ** PathList path)
+  ServerToPathComp [] = ([] ** [])
+  ServerToPathComp ((path :|: impl) :: xs) =
+    let (path' ** imp') = ServerToPathComp xs in ((_ ** path) :: path' ** impl :: imp')
+
+  serverToPaths : ServerTree st -> List (ServerImpl st)
+  serverToPaths (Wrap x) = [x]
+  serverToPaths (Prefix str paths) =
+    map (insertPrefix str) (serverToPaths paths)
+  serverToPaths (Fork xs) = xs >>= serverToPaths
 
 partial
 runServer : {st : Type} -> ServerTree st -> (initial : st) -> IO ()
 runServer api initial =
-  let (paths ** impl) = ServerToPathComp (serverToPaths api) in
+  let (paths ** impl) = fromServerTree api in
   runLog Silent initial $ server (handleAllPaths st paths impl)
 
+docsFromTree : ServerTree st -> Doc String
+docsFromTree tree = let (path ** _) = fromServerTree tree in generateDocs (map (, Nothing) path)
+
 main : IO ()
-main = runServer ExtendedPath initial
+main = printLn (docsFromTree ExtendedPath)
 
 -- TODO:
 --   - [x] Extend paths with lenses

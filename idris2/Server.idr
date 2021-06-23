@@ -1,6 +1,7 @@
 module Server
 
--- import Control.Monad.Syntax
+import public Interfaces
+
 import Control.Monad.Identity
 import Control.Monad.Converter
 
@@ -23,7 +24,7 @@ import public Records
 public export
 data Verb : Type where
   Get : Verb
-  Post : (body : Type) -> HasParser body => Verb
+  Post : (body : Type) -> HasParser body => Documented body => Verb
 
 namespace IndexedRecords
   ||| Value for a row given a key
@@ -34,19 +35,20 @@ namespace IndexedRecords
   public export
   data IRecord : Record -> Type where
     Nil : IRecord []
-    (::) :  HasParser t => RowVal s t ->
-            IRecord rs -> IRecord (s :=: t :: rs)
+    (::) :  HasParser t => RowVal s t -> Display t => Default t =>
+            IRecord rs -> IRecord ((s :=: t) :: rs)
+
 
 ||| A Type for Paths that can have a common prefix.
 public export
 data Path : Type where
   Ends : (queryItems: Maybe Record)
       -> (returnType : Type)
-      -> Show returnType
+      -> Documented returnType
       => (v : Verb)
       -> Path
   Plain : String -> (ps : Path) -> Path
-  Capture : (name : String) -> (t : Type) -> HasParser t => (ps : Path) -> Path
+  Capture : (name : String) -> (t : Type) -> HasParser t => Documented t => (ps : Path) -> Path
   Split : List Path -> Path
 
 ||| Is the endpoint querying the state or updating the state?
@@ -54,7 +56,7 @@ data Path : Type where
 public export
 data RequestBody : Type where
   Query : (st : Type) -> Show st => RequestBody
-  Update : (val : Type) -> HasParser val => (st : Type) -> Show st => RequestBody
+  Update : (val : Type) -> HasParser val => Documented val => (st : Type) -> Show st => RequestBody
 
 public export
 StTy : RequestBody -> Type
@@ -81,17 +83,18 @@ Args4Req (Update val st) = 1
 ||| A Type for full path components.
 public export
 data PathComp : Nat -> (state : Type) -> Type where
-  End : (q : Maybe Record) -> (update : RequestBody) -> (ret : Type) -> Show ret => PathComp (Args4Req update) (StTy update)
+  End : (q : Maybe Record) -> (update : RequestBody) -> (ret : Type) -> Documented ret =>
+        PathComp (Args4Req update) (StTy update)
   Str : String -> PathComp n st -> PathComp (S n) st
-  Tpe : (t : Type) -> HasParser t => PathComp n st -> PathComp (S n) st
+  Tpe : (t : Type) -> HasParser t => Documented t => PathComp n st -> PathComp (S n) st
 
 export
 Show (PathComp n st) where
-  show (End Nothing (Query _) ret) = "returns: '" ++ ShowType ret ++ "'"
-  show (End Nothing (Update body _) ret) = "returns: '" ++ ShowType ret ++ "' body : \{ShowType body}'"
+  show (End Nothing (Query _) ret) = "returns: '" ++ display {t=ret} ++ "'"
+  show (End Nothing (Update body _) ret) = "returns: '" ++ display {t=ret} ++ "' body : \{display {t=body}}'"
   show (End (Just q) update ret) = show q ++ "/" ++ assert_total (show (End Nothing update ret))
   show (Str x y) = x ++ "/" ++ show y
-  show (Tpe t x) = ":\{ShowType t}/" ++ show x
+  show (Tpe t x) = ":\{display {t}}/" ++ show x
 
 ||| Convert a PathComp into a function type
 public export
@@ -185,10 +188,12 @@ cat (p :: x) y = p :: cat x y
 
 public export
 TypeList : Type
-TypeList = List (Either String (s : Type ** HasParser s))
+TypeList = List (Either String (s : Type ** (HasParser s, Documented s)))
 
 public export
-mkComponents : Maybe Record -> (req : RequestBody) -> TypeList -> (t : Type) -> Show t => (n ** PathComp n (StTy req))
+mkComponents : Maybe Record -> (req : RequestBody) -> TypeList ->
+               (t : Type) -> Documented t =>
+               (n ** PathComp n (StTy req))
 mkComponents rec req [] x = (Args4Req req ** End rec req x)
 mkComponents rec req (Left str :: xs) x =
   let (n ** ts) = mkComponents rec req xs x in
@@ -221,7 +226,7 @@ parameters (state : Type) {auto showI : Show state}
   toComponents pre (Ends rec t (Post val)) =
     pure $ mkComponents rec (Update val state) (reverse pre) t
   toComponents pre (Plain name ps) = toComponents (Left name :: pre) ps
-  toComponents pre (Capture name t ps) = toComponents (Right (t ** %search) :: pre) ps
+  toComponents pre (Capture name t ps) = toComponents (Right (t ** (%search, %search)) :: pre) ps
   toComponents pre (Split xs) =  xs >>= assert_total (toComponents pre)
 
 ||| Maps a Path into a list of functions
