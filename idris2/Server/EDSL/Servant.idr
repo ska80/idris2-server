@@ -1,4 +1,4 @@
-module EDSL
+module Server.EDSL.Servant
 
 import Server
 import Optics

@@ -1,9 +1,8 @@
-module Documentation
+module Server.Documentation
 
 import Server
 import Data.Maybe
 import public Text.PrettyPrint.PrettyPrinter
-
 
 data ReqType = GetReq | PostReq
 
@@ -52,13 +51,13 @@ generateDoc path desc = renderEndpoint desc (generateAcc _ path [])
   where
     generateAcc : (0 n : Nat) -> PathComp n st -> List (Either String (t ** Documented t)) -> DisplayEndpoint
     generateAcc _ (End Nothing (Query _) ret) args =
-      MkDisplay args Nothing GetReq (ret ** %search)
+      MkDisplay (reverse args) Nothing GetReq (ret ** %search)
     generateAcc _ (End Nothing (Update v _) ret) args =
-      MkDisplay args Nothing PostReq (ret ** %search)
+      MkDisplay (reverse args) Nothing PostReq (ret ** %search)
     generateAcc _ (End (Just q) (Query _) ret) args =
-      MkDisplay args (Just q) GetReq (ret ** %search)
+      MkDisplay (reverse args) (Just q) GetReq (ret ** %search)
     generateAcc _ (End (Just q) (Update v _) ret) args =
-      MkDisplay args (Just q) PostReq (ret ** %search)
+      MkDisplay (reverse args) (Just q) PostReq (ret ** %search)
     generateAcc _ (Str x y) args =
       generateAcc _ y (Left x :: args)
     generateAcc _ (Tpe t x) args =

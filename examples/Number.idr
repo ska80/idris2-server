@@ -1,10 +1,7 @@
 module Main
 
 import Server
-import Engine
-import EDSL
-import Control.Monad.Converter
-import Control.Monad.State
+import Server.EDSL.Servant
 import Data.IORef
 import Data.Nat
 

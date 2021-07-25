@@ -2,7 +2,7 @@ module Data.String.ParserUtils
 
 import Data.Either
 import Data.String.NonEmpty
-import Data.Strings
+import Data.String
 import Data.List1
 import public Control.Monad.Identity
 import public Data.String.Parser

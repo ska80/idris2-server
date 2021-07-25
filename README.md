@@ -7,10 +7,10 @@ enforce a proper implementation of those routes. Implementing a server is as eas
 
 ```idris
 MyRoute : Path
-MyRoute = "numerator" // Cap "num" Int // "denominator" // Cap "denom" Int // Returns Int Get Ok
+MyRoute = "numerator" / Cap "num" Int / "denominator" / Cap "denom" Int / Returns Int Get Ok
 
-MyImpl : Signature MyRoute
-MyImpl = [div]
+MyImpl : Signature () MyRoute
+MyImpl = [\a, b, _ => div a b ]
 
 main : IO ()
 main = newServer MyRoute MyImpl
@@ -26,19 +26,12 @@ Once the library is installed you can compile the examples by going into the exa
 `cd examples/` and running
 
 ```
-> idris -p server -o main Main.idr
-> ./main
+> idris -p server -o calc Calclator.idr
+> ./build/exec/calc
 ```
 
-This will run a pretend server that read stdin and print the result on stdout.
+This will run a pretend server that read a request on stdin and print the result on stdout.
 
-## Additional features (Not yet implemented)
+## Video presentation
 
-- Automatically derive documatation from your routes
-- Automatically parses requests
-- First class support for [Typedefs](https://typedefs.com)
-
-## Why
-
-I was bored a Friday night
-
+https://www.youtube.com/watch?v=4xpbYPa1lTc

@@ -1,16 +1,16 @@
-module Examples.Todo
+module Todo
 
 import Server
-import Engine
-import EDSL
+import Server.EDSL.Servant
 import Optics
+import Interfaces
 import Data.List
 import Data.List.Optics
 import Data.SortedMap
 import Data.SortedMap.Optics
 import Data.Vect
-
-import Prelude as P
+import Data.String.ParserInterface
+import Data.String.Parser
 
 %hide Prelude.(/)
 
@@ -29,8 +29,24 @@ update k f m =
   let v = fromMaybe neutral $ lookup k m in
     insert k (f v) m
 
-Todo : Type
-Todo = String
+record Todo where
+  constructor MkTodo
+  title : String
+  note : String
+
+HasParser Todo where
+  partialParse = [| MkTodo partialParse partialParse |]
+
+Show Todo where
+  show (MkTodo t n) = "Todo(title: \{t}, note: \{n})"
+
+Display Todo where
+  display = "Todo"
+
+Default Todo where
+  def = MkTodo "get milk" "get the one on reduction"
+
+-- Documented (Todo) where
 
 getTodo : Path
 getTodo = "todo" / Cap "user" Int / Returns (List Todo) Get

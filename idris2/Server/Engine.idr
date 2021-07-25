@@ -1,14 +1,13 @@
-module Engine
+module Server.Engine
 
-import Control.Monad.Converter
 import Data.IORef
 import Data.List1
-import Data.Strings
+import Data.String
 import Data.Maybe
 import Data.Either
 import Data.Vect
 import Data.IO.Logging
-import Server
+import Server.Server
 import Server.Utils
 import URL
 import Requests

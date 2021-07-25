@@ -12,7 +12,7 @@ matchHead = MkPrism (\case [] => Left []; (x :: xs) => Right x)
 matchTail : Prism (List a) (List a) (List a) (List a)
 matchTail = MkPrism ?matchTail_rhs (\ls => ?wahu)
 
-||| Get the list or update the first element
+||| Get the list or prepend one element
 export
 updateHead : Lens (List a) a (List a) (List a)
 updateHead = MkLens id (\(xs, x) => x :: xs)

@@ -38,6 +38,10 @@ Display Nat where
   display = "Nat"
 
 export
+Display () where
+  display = "()"
+
+export
 Display a => Display (Vect n a) where
   display = "Vect n \{display{t=a}}"
 
@@ -48,30 +52,40 @@ Display key => Display val => Display (SortedMap key val) where
 public export
 interface Default t where
   def : t
+  defs : List t
+  defs = [def]
 
 export
-Default a => Default b => Default (a, b) where
+Default a => Default b => Default (Pair a b) where
   def = (def, def)
+  defs = [(def1, def2) | def1 <- defs {t=a}, def2 <- defs {t=b}]
 
 export
 Default a => Default (List a) where
-  def = [def, def]
+  def = defs {t=a} ++ defs {t=a}
+  defs = [[], def]
 
 export
 Default Double where
   def = 0
+  defs = [0, 3.14, -9.8]
 
 export
-Monoid t => Default t where
-  def = neutral
+Default Int where
+  def = 0
+  defs = [0, 1, -3]
+
+export
+Default () where
+  def = ()
 
 export
 Default Bool where
   def = True
+  defs = [True, False]
 
-public export
+export
 interface Show t => Display t => Default t => Documented t where
 
 export
 implementation Show t => Display t => Default t => Documented t where
-

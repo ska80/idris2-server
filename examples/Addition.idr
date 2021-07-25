@@ -1,27 +1,17 @@
-module Main
+module Addition
 
 import Server
-import Engine
-import EDSL
-import Control.Monad.Converter
-import Control.Monad.State
-import Data.IORef
-import Data.Nat
+import Server.EDSL.Servant
 
 %hide Prelude.(/)
 
 infixr 5 /
 
-data T1 = T
-
-Show T1 where
-  show T = "T"
-
 API : Path
-API = "path" / "to" / "resource" / Returns T1 Get
+API = Cap "left" Int / Cap "right" Int / Returns Int Get
 
 SimpleAPI : Signature () API
-SimpleAPI = [\_ => T]
+SimpleAPI = [\x, y, () => x + y]
 
 -- In order to run the server we need to supply it with an initial state
 -- which will be stored as an IORef

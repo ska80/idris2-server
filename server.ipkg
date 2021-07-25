@@ -1,7 +1,24 @@
-package server
+package idris-server
 
-sourcedir = src
 modules = Server
-
-pkgs = contrib
-
+        , Records
+        -- , URL                  -- This is used to parse URLS but we probably don't need it
+        , Optics
+        , Products
+        , Requests
+        , Data.IO.Logging
+        , Data.SortedMap.Optics
+        , Data.List.Optics
+        , Data.String.ParserInterface
+        , Data.String.ParserUtils
+        , Data.String.NonEmpty -- Not sure if we need this, it's a dependency in URL
+                               -- But I'm not sure we need URL either
+        , Server.Documentation
+        , Server.Server
+        , Server.Engine
+        , Server.Utils
+        , Server.EDSL.Lenses
+        , Server.EDSL.Servant
+        , Interfaces
+depends = contrib
+sourcedir = "idris2"

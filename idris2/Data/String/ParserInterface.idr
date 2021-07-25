@@ -1,7 +1,7 @@
 module Data.String.ParserInterface
 
 import Data.SortedMap
-import Data.Strings
+import Data.String
 import Data.String.Parser
 
 ------------------------------------------------------------------------
