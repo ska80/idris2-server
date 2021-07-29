@@ -1,4 +1,3 @@
-
 # Idris-server
 
 Idris-server is a webserver library for Idris. It's distinctive feature is to use Idris'
@@ -26,7 +25,7 @@ Once the library is installed you can compile the examples by going into the exa
 `cd examples/` and running
 
 ```
-> idris -p idris-server -o calc Calclator.idr
+> idris -p idris-server -p contrib -o calc Calclator.idr
 > ./build/exec/calc
 ```
 
