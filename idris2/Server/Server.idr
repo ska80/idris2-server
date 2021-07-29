@@ -89,8 +89,10 @@ data PathComp : Nat -> (state : Type) -> Type where
 
 export
 Show (PathComp n st) where
-  show (End Nothing (Query _) ret) = "returns: '" ++ display {t=ret} ++ "'"
-  show (End Nothing (Update body _) ret) = "returns: '" ++ display {t=ret} ++ "' body : \{display {t=body}}'"
+  show (End Nothing (Query _) ret) =
+    " returns:'\{display {t=ret}}' method: GET"
+  show (End Nothing (Update body _) ret) =
+    " returns:'\{display {t=ret}}' body : \{display {t=body}}' method: POST"
   show (End (Just q) update ret) = show q ++ "/" ++ assert_total (show (End Nothing update ret))
   show (Str x y) = x ++ "/" ++ show y
   show (Tpe t x) = ":\{display {t}}/" ++ show x
@@ -104,6 +106,12 @@ PathCompToType (End (Just rec) (Update val st) ret) = IRecord rec -> val -> st -
 PathCompToType (End (Just rec) (Query st) ret) = IRecord rec -> st -> ret
 PathCompToType (Str x y) = PathCompToType y
 PathCompToType (Tpe x y) = x -> PathCompToType y
+
+export
+PathCompReq : PathComp n st -> RequestBody
+PathCompReq (End q update ret) = update
+PathCompReq (Str x y) = PathCompReq y
+PathCompReq (Tpe t x) = PathCompReq x
 
 ||| Convert a PathComp into a tuple of arguments for the corresponding function type
 public export
@@ -250,10 +258,10 @@ FromSignature ps {path} = signatureHelp ps
 
 public export
 data ServerError : Type where
-  WrongArgumentLength : Show a => (n : Nat) -> List a -> PathComp n st -> ServerError
+  WrongArgumentLength : (n : Nat) -> List String -> PathComp n st -> ServerError
   UnexpectedPath : (expected, actual : String) -> ServerError
   ParseError : (message : String) -> ServerError
-  UnhandledPath : List String -> ServerError
+  UnhandledRequest : (message : String) -> (expected : String) -> ServerError
   Aggregate : List ServerError -> ServerError
   QueryLength : ServerError
   UnexpectedQueryItem : (expected, actual : String) -> ServerError
@@ -263,15 +271,15 @@ Show ServerError where
   show (WrongArgumentLength k xs p) =
     "Expected " ++ show k ++ " arguments, got " ++ show (length xs) ++ "." ++
       " Expected path: " ++ show p ++
-      " Actual path: " ++ show xs
+      " Actual path: " ++ concat (intersperse "/" (xs))
   show (UnexpectedPath expected actual) =
     "Expected path component " ++ show expected ++ ", got " ++ show actual ++ " instead."
   show (ParseError message) =
-    "Parse error: " ++ show message ++ "."
-  show (UnhandledPath xs) =
-    "Path not handled by server: " ++ show xs ++ "."
+    "Parse error: \{message}."
+  show (UnhandledRequest msg expected) =
+    "Cannot handle \{msg} request, expected request: \{expected}"
   show (Aggregate xs) =
-    "Multiple errors: \n" ++ unlines (map (\x => " - " ++ (assert_total show) x) xs)
+    "Tried multiple routes, all failed with errors: \n" ++ unlines (map (\x => " - " ++ (assert_total show) x) xs)
   show QueryLength =
     "Query items have the wrong length"
   show (UnexpectedQueryItem expected actual) =
@@ -282,9 +290,9 @@ ServerM : Type -> Type
 ServerM = Either ServerError
 
 -- Attempts to parse a string completely and return a server error if it cannot
-parseToServerError : HasParser a => String -> ServerM a
-parseToServerError input =
-  maybeToEither (ParseError $ "could not parse " ++ input) (parse input)
+parseToServerError : {a : Type} -> Display a => HasParser a => String -> ServerM a
+parseToServerError {a} input =
+  maybeToEither (ParseError "could not parse \{show input} into value of type \{display {t=a}}") (parse input)
 
 -- attempts to parse a list of key-values from a record
 public export

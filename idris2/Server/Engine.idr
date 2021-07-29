@@ -16,12 +16,17 @@ import Debug.Trace
 
 import System.File
 
+%default total
+
+reqToMethod : RequestBody -> HTTPMethod
+reqToMethod (Query _) = Get
+reqToMethod (Update _ _) = Post
+
 -- A Handler attemps to parse the request and uses the current state to compute a response
 Handler : Type -> Type
 Handler state
         = state
-       -> (components : List String)
-       -> (queryItems : List (String, String))
+       -> Request
        -> LogIO state (ServerM String)
 
 -- Here the handlers are both parsing the string and returning the result of
@@ -30,29 +35,28 @@ Handler state
 export partial
 server : {state : Type} -> (handlers : List (Handler state)) -> LogIO state ()
 server handlers = Logging.do
-    str <- awaitRequest
-    log ("got request " ++ str)
+    req <- awaitRequest
+    logVerbose ("successfully parsed request:")
+    logVerbose ("----------------------------")
+    logVerbose (show req)
+    logVerbose ("----------------------------")
     currentState <- getState
-    let Just (path, body) = parseRequest str
-      | _ => logVerbose ("Could not parse url " ++ str)
-          *> server handlers
-    logVerbose ("successfully parsed  request body " ++ show body)
-    let path' = maybe path (snoc path) body
-    result <- tryAll [] handlers currentState path' []
+    result <- tryAll [] handlers currentState req
     logVerbose ("computed result " ++ show result)
-    either (log . show) sendRequest result
+    either (logError . show) sendRequest result
     server handlers
   where
     -- Returns a handler that combines all handlers from a list by
     -- successively trying to apply them in order
     tryAll : List ServerError -> List (Handler state) -> Handler state
-    tryAll errors [] state input query = pure $ Left $ Aggregate errors
-    tryAll errors (f :: fs) state input query = do
+    tryAll [error] [] state request = pure $ Left $ error
+    tryAll errors [] state request = pure $ Left $ Aggregate errors
+    tryAll errors (f :: fs) state request = do
       logVerbose "About to run handler"
-      case !(f state input query) of
+      case !(f state request) of
            Left err => do
              logVerbose "failed to handle, trying next handler"
-             tryAll (err :: errors) fs state input query
+             tryAll (err :: errors) fs state request
            Right value => do
              logVerbose $ "handled value " ++ show value
              pure (Right value)
@@ -87,9 +91,12 @@ stringSig : {state : Type} ->
             (showResult : Ret p -> String) ->
             (handler : Args p -> Ret p) ->
             Handler state
-stringSig n p parser printer handler state path query =
-  let
+stringSig n p parser printer handler state request =
+  let path = if request.method == Post then request.path `snoc` request.body else request.path
+      query = []
       parsed = checkLength path >>= parser query -- have the arguments been parsed?
+      True = reqToMethod (PathCompReq p) == request.method
+        | False => pure (Left $ UnhandledRequest (show request.method) (show p))
       handle = fromHandle p state handler -- given the arguments, print the result
       val = map handle parsed
       result = traverse
@@ -110,8 +117,8 @@ stringSig n p parser printer handler state path query =
     updateRet (Tpe _ p) {n=S n} y = updateRet p y
     updateRet p _ = logVerbose ("cannot update, got path " ++ show p)
 
-    checkLength : Show a => List a -> ServerM (Vect n a)
-    checkLength ls = maybeToEither (WrongArgumentLength n ls p )
+    checkLength : List String -> ServerM (Vect n String)
+    checkLength ls = maybeToEither (WrongArgumentLength n ls p)
                                    (exactLength n $ fromList ls)
 
 ||| Given an implementation of a path, return a list of function for each possible route
@@ -144,12 +151,13 @@ forAllPaths state path x = handleAllPaths state (toComponents state [] path)  x
 export partial
 newServer : {state : Type} ->
             Show state =>
+            (logLevel : LogLevel) ->
             (initial : state) ->
             (path : Server.Path) ->
             (impl : Signature state path) ->
             IO ()
-newServer initial path impl = do
-  runLog Normal initial $ server (forAllPaths state path impl)
+newServer logLevel initial path impl = do
+  runLog logLevel initial $ server (forAllPaths state path impl)
 
 {-
 -}

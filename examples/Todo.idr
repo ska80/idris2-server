@@ -35,7 +35,9 @@ record Todo where
   note : String
 
 HasParser Todo where
-  partialParse = [| MkTodo partialParse partialParse |]
+  partialParse = MkTodo <$> str <* char ',' <*> str
+      where str : Parser String
+            str = pack <$> some alphaNum
 
 Show Todo where
   show (MkTodo t n) = "Todo(title: \{t}, note: \{n})"
@@ -76,7 +78,7 @@ todoImpl = [findTodo, updateTodo]
     updateTodo id todo state = (todo :: findTodo id state, update id (todo ::) state)
 
 main : IO ()
-main = Engine.newServer empty TodoResource todoImpl
+main = newServer Normal empty TodoResource todoImpl
 
 {-
 -}

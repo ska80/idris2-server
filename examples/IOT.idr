@@ -26,7 +26,7 @@ simpleServer = [ boilerLens.get
                , fixup lightsLens.set ]
 
 main : IO ()
-main = newServer initialState SimpleAPI simpleServer
+main = newServer Normal initialState SimpleAPI simpleServer
 
 -}
 
@@ -45,7 +45,7 @@ NaivePath = Fork [ Wrap ("boiler" / Ret Bool HomeState Get :|:
                  fixup boilerLens.set)]
 
 main : IO ()
-main = runServer NaivePath initialState
+main = runServer Normal NaivePath initialState
 -}
 
 
@@ -62,9 +62,9 @@ RefactoredPath = (Prefix "boiler" (Fork [ Wrap (Ret Bool HomeState Get :|: boile
                                         , Wrap (Ret Bool HomeState (Post Bool)  :|: fixup boilerLens.set)]))
 
 main : IO ()
-main = runServer RefactoredPath initialState
-
+main = runServer Normal RefactoredPath initialState
 -}
+
 
 
 
@@ -75,7 +75,7 @@ main = runServer RefactoredPath initialState
 
 {-
 main : IO ()
-main = runServer (Prefix "boiler" (ResourceLens boilerLens)) initialState
+main = runServer Normal (Prefix "boiler" (ResourceLens boilerLens)) initialState
 -}
 
 
@@ -84,8 +84,8 @@ main = runServer (Prefix "boiler" (ResourceLens boilerLens)) initialState
 
 
 
-
 {-
+
 LensPath : ServerTree HomeState
 LensPath = Prefix "boiler" (ResourceLens boilerLens)
 
@@ -98,7 +98,7 @@ FullPath = Prefix "home" (Fork [ LensPath
                                , LightsPath])
 
 main : IO ()
-main = runServer FullPath initialState
+main = runServer Normal FullPath initialState
 -}
 
 
@@ -109,12 +109,12 @@ main = runServer FullPath initialState
 
 
 
+{-
 LensPath : ServerTree HomeState
 LensPath = Prefix "boiler" (ResourceLens boilerLens)
 
 LightsPath : ServerTree HomeState
 LightsPath = Prefix "lights" (ResourceLens lightsLens)
-
 
 KitchenLights : ServerTree HomeState
 KitchenLights = (LightsPath ~/ "kitchen") {lens=lightsLens} fstLens
@@ -128,8 +128,7 @@ BathroomLights = (LightsPath ~/ "bathroom") {lens=lightsLens} trdLens
 ExtendedPath : ServerTree HomeState
 ExtendedPath =
   Prefix "home" (Fork [ LensPath
-                      , Wrap ("lights" / Ret Lights HomeState Get :|: lightsLens.get)
-                      -- , LightsPath
+                      , Prefix "lights" (GetLens lightsLens)
                       , KitchenLights
                       , LivingLights
                       , BathroomLights])
@@ -140,8 +139,28 @@ main = printLn (docsFromTree ExtendedPath)
 
 
 -- main : IO ()
--- main = runServer ExtendedPath initialState
+-- main = runServer Normal ExtendedPath initialState
+-}
 
+LensPath : ServerTree HomeState
+LensPath = Prefix "boiler" (ResourceLens boilerLens)
+
+LightsPath : ServerTree HomeState
+LightsPath = Prefix "lights" (ResourceLens lightsLens)
+
+ExtendedPath : ServerTree HomeState
+ExtendedPath =
+  Prefix "home" (Fork [ LensPath
+                      , Prefix "lights" (GetLens lightsLens)
+                      , (LightsPath ~/ "bathroom") {lens=lightsLens} trdLens
+                      -- , (((LightsPath ~/ "living+bathroom") {lens=lightsLens} sndLens)
+                      --                 ~/ "living") {lens=(composeStates sndLens lightsLens)} fstLens
+                      , ((LightsPath ~/ "living") {lens=lightsLens} (fstLens `compose` sndLens))
+                      , (LightsPath ~/ "kitchen") {lens=lightsLens} fstLens])
+
+-- print documentation
+main : IO ()
+main = printLn (docsFromTree ExtendedPath)
 
 
 

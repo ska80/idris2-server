@@ -2,9 +2,22 @@ module Data.IO.Logging
 
 import Data.IORef
 import System.File
+import Requests
 
 public export
-data LogLevel = Silent | Normal | Verbose
+data LogLevel
+
+  -- No logging except for interative elements
+  = Silent
+
+  -- Only log errors
+  | Error
+  -- Log erros and warnings
+  | Warning
+  -- Log errors and normal messages
+  | Normal
+  -- Log everything
+  | Verbose
 
 export
 Eq LogLevel where
@@ -13,25 +26,40 @@ Eq LogLevel where
   Verbose == Verbose = True
   _ == _ = False
 
-export
-Ord LogLevel where
-  compare Silent Silent = EQ
-  compare Silent _ = LT
-  compare Normal Silent = GT
-  compare Normal Normal = EQ
-  compare Normal Verbose = GT
-  compare Verbose Verbose = EQ
-  compare Verbose _ = GT
+interface Enum ty where
+  value : ty -> Nat
+
+Enum LogLevel where
+  value Silent = 0
+  value Error = 1
+  value Warning = 2
+  value Normal = 3
+  value Verbose = 4
 
 export
+Ord LogLevel where
+  compare left right = compare (value left) (value right)
+
+||| A monad that logs events, carries an internal state and communicate with the outside world
+||| though a network connection
+||| The internal state is used to model state updates on the server
+export
 data LogIO : Type -> Type -> Type where
+  ||| Create a value
   Pure : val -> LogIO st val
-  Read : LogIO st String -- readfrom socket/STDIN
-  Write : String -> LogIO st () -- write to socket/STDOUt
+  ||| Receive a request from the network, typically on a socket or on STDOut
+  Read : LogIO st Request
+  ||| Send a request on the network, typically on a socket or on STDOut
+  Write : String -> LogIO st ()
+  ||| Get the interal state
   ReadState : LogIO st st
+  ||| Overwrite the internal state
   WriteState : st -> LogIO st ()
+  ||| Change the log level that we print
   ChLvl : (lvl : LogLevel) -> LogIO st ()
+  ||| Write a log
   Log : (lvl : LogLevel) -> String -> LogIO st ()
+  ||| Sequence two LogIO operations
   Bind : LogIO st ty -> (ty -> LogIO st sy) -> LogIO st sy
 
 export %inline
@@ -40,14 +68,18 @@ pure = Pure
 
 export %inline
 log : String -> LogIO st ()
-log x = Log Normal x
+log = Log Normal
 
 export %inline
 logVerbose : String -> LogIO st ()
-logVerbose x = Log Verbose x
+logVerbose = Log Verbose
 
 export %inline
-awaitRequest : LogIO st String
+logError : String -> LogIO st ()
+logError = Log Error
+
+export %inline
+awaitRequest : LogIO st Request
 awaitRequest = Read
 
 export %inline
@@ -101,7 +133,16 @@ Monad (LogIO st) where
 parameters (lvl : IORef LogLevel) (state : IORef st)
   execLog : LogIO st ty -> IO ty
   execLog (Pure x) = pure x
-  execLog Read = getLine
+  execLog Read =
+    let str = !getLine
+        Just req = parseRequest str
+      | _ => execLog $
+             logError ("Could not parse request " ++ str)
+          *> log "supported requests:"
+          *> log "GET url/to/resource"
+          *> log "POST url/to/resource *body*"
+          *> Read
+     in pure req
   execLog (Write x) = putStrLn x
   execLog (ChLvl x) = writeIORef lvl x
   execLog ReadState = readIORef state
@@ -112,6 +153,8 @@ parameters (lvl : IORef LogLevel) (state : IORef st)
   execLog (Bind x f) =
     execLog x >>= execLog . f
 
+||| Run the LogIO monad, given an initial state, a log level to print and a LogIO action
+||| this will run the program in the IO Monad
 export
 runLog : (lvl : LogLevel) -> (initial : st) -> LogIO st ty -> IO ty
 runLog lvl initial prog = execLog !(newIORef lvl) !(newIORef initial) prog

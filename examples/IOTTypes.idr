@@ -15,7 +15,7 @@ record HomeState where
   lights : Lights
 
 export
-lightsLens : Lens Lights Lights
+lightsLens : Lens Lights    Lights
                   HomeState (Lights, HomeState)
 lightsLens = MkLens lights (\(st, v) => (v, record { lights = v } st))
 

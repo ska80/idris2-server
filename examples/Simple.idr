@@ -28,5 +28,5 @@ SimpleAPI = [\_ => T]
 -- In order to run the server we need to supply it with an initial state
 -- which will be stored as an IORef
 main : IO ()
-main = newServer () API SimpleAPI
+main = newServer Normal () API SimpleAPI
 

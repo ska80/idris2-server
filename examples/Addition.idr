@@ -2,6 +2,7 @@ module Addition
 
 import Server
 import Server.EDSL.Servant
+import Data.IO.Logging
 
 %hide Prelude.(/)
 
@@ -16,5 +17,5 @@ SimpleAPI = [\x, y, () => x + y]
 -- In order to run the server we need to supply it with an initial state
 -- which will be stored as an IORef
 main : IO ()
-main = newServer () API SimpleAPI
+main = newServer Error () API SimpleAPI
 

@@ -159,10 +159,10 @@ fromServerTree = ServerToPathComp . serverToPaths
   serverToPaths (Fork xs) = xs >>= serverToPaths
 
 partial export
-runServer : {st : Type} -> ServerTree st -> (initial : st) -> IO ()
-runServer api initial =
+runServer : LogLevel -> {st : Type} -> ServerTree st -> (initial : st) -> IO ()
+runServer logLevel api initial =
   let (paths ** impl) = fromServerTree api in
-  runLog Normal initial $ server (handleAllPaths st paths impl)
+  runLog logLevel initial $ server (handleAllPaths st paths impl)
 
 export
 docsFromTree : ServerTree st -> Doc String
