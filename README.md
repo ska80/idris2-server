@@ -26,11 +26,11 @@ Once the library is installed you can compile the examples by going into the exa
 `cd examples/` and running
 
 ```
-> idris -p server -o calc Calclator.idr
+> idris -p idris-server -o calc Calclator.idr
 > ./build/exec/calc
 ```
 
-This will run a pretend server that read a request on stdin and print the result on stdout.
+This will run a mock server that read a request on stdin and print the result on stdout.
 
 ## Video presentation
 
